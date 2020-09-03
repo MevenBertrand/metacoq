@@ -1,0 +1,19 @@
+-R ../template-coq/theories MetaCoq.Template
+-R ../pcuic/theories MetaCoq.PCUIC
+-R ../safechecker/theories MetaCoq.SafeChecker
+-R ../egcic/theories MetaCoq.EGCIC
+
+-R theories MetaCoq.GCIC
+
+theories/GCICAst.v
+theories/GCICSize.v
+theories/GCICAstUtils.v
+theories/GCICInduction.v
+theories/GCICLiftSubst.v
+theories/GCICUnivSubst.v
+theories/GCICReflect.v
+theories/GCICEquality.v
+theories/GCICPosition.v
+theories/GCICEnvironmentTyping.v
+theories/PairTerms.v
+theories/GCICTyping.v

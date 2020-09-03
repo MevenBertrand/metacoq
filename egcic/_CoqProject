@@ -1,0 +1,16 @@
+-R ../template-coq/theories MetaCoq.Template -I ../template-coq/build -I ../checker/src -R ../checker/theories MetaCoq.Checker -R ../pcuic/theories MetaCoq.PCUIC
+
+-R theories MetaCoq.EGCIC
+
+theories/EGCICAst.v
+theories/EGCICSize.v
+theories/EGCICAstUtils.v
+theories/EGCICInduction.v
+theories/EGCICLiftSubst.v
+theories/EGCICUnivSubst.v
+theories/EGCICReflect.v
+theories/EGCICEquality.v
+theories/EGCICConsistency.v
+theories/EGCICPosition.v
+theories/EGCICConversion.v
+theories/EGCICTyping.v
