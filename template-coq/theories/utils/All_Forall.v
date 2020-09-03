@@ -778,8 +778,8 @@ Section Alli_size.
 End Alli_size.
 
 Section All2_size.
-  Context {A} (P : A -> A -> Type) (fn : forall x1 x2, P x1 x2 -> size).
-  Fixpoint all2_size {l1 l2 : list A} (f : All2 P l1 l2) : size :=
+  Context {A B} (P : A -> B -> Type) (fn : forall x1 x2, P x1 x2 -> size).
+  Fixpoint all2_size {l1 : list A} {l2 : list B} (f : All2 P l1 l2) : size :=
   match f with
   | All2_nil => 0
   | All2_cons rxy rll' => fn _ _ rxy + all2_size rll'

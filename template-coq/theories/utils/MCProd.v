@@ -14,6 +14,8 @@ Notation "x × y" := (prod x y ) (at level 80, right associativity).
 Notation "p .p1" := (proj1 p) (at level 2, left associativity, format "p .p1").
 Notation "p .p2" := (proj2 p) (at level 2, left associativity, format "p .p2").
 
+Definition on_fst {A B C} (f : A -> C) (p : A * B) :=
+(f(fst p), snd p).
 
 Definition on_snd {A B C} (f : B -> C) (p : A * B) :=
   (fst p, f (snd p)).
@@ -44,7 +46,7 @@ Proof.
   destruct x; unfold on_snd; cbn. split; congruence.
 Qed.
 
-Definition on_pi2 {A B C} (f : B -> B) (p : A * B * C) : A * B * C :=
+Definition on_pi2 {A B C D} (f : B -> D) (p : A * B * C) : A * D * C :=
   (fst (fst p), f (snd (fst p)), snd p).
 
 
