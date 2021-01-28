@@ -4067,7 +4067,7 @@ Lemma build_branches_type_wt {cf : checker_flags}	{Σ : global_env_ext} {wfΣ : 
   let ptm := it_mkLambda_or_LetIn predctx p.(preturn) in
   All2i (fun i cdecl br => 
     let brctxty := case_branch_type ci.(ci_ind) mdecl idecl p br ptm i cdecl in
-    isType Σ (Γ ,,, brctxty.1) brctxty.2) 
+    Σ ;;; (Γ ,,, brctxty.1) |- brctxty.2 : tSort ps)
     0 (ind_ctors idecl) brs.
 Proof.
   todo "case".
