@@ -352,38 +352,6 @@ Proof.
   eapply eq_term_upto_univ_eta_sym. all: exact _.
 Qed.
 
-Instance R_global_instance_trans Σ Re Rle gr napp :
-  RelationClasses.Transitive Re ->
-  RelationClasses.Transitive Rle ->
-  RelationClasses.Transitive (R_global_instance Σ Re Rle gr napp).
-Proof.
-  intros he hle x y z.
-  unfold R_global_instance, R_opt_variance.
-  destruct global_variance as [v|].
-  clear -he hle.
-  induction x in y, z, v |- *; destruct y, z, v; simpl; auto => //. eauto.
-  intros [Ra Rxy] [Rt Ryz].
-  split; eauto.
-  destruct t1; simpl in *; auto.
-  now etransitivity; eauto.
-  now etransitivity; eauto.
-  eapply Forall2_trans; auto.
-Qed.
-
-Lemma onctx_eq_ctx_trans P ctx ctx' ctx'' eq_term :
-  onctx P ctx ->
-  (forall x, P x -> forall y z, eq_term x y -> eq_term y z -> eq_term x z) ->
-  All2_fold (fun _ _ => compare_decls eq_term eq_term) ctx ctx' ->
-  All2_fold (fun _ _ => compare_decls eq_term eq_term) ctx' ctx'' ->
-  All2_fold (fun _ _ => compare_decls eq_term eq_term) ctx ctx''.
-Proof.
-  intros onc HP H1; revert ctx''.
-  induction H1; depelim onc; intros ctx'' H; depelim H; constructor; intuition auto; simpl in *.
-  depelim o. depelim p0.
-  - depelim c; constructor; [now etransitivity|eauto].
-  - depelim c; constructor; [now etransitivity|eauto ..].
-Qed.
-
 Instance eq_predicate_trans Re Ru :
   CRelationClasses.Transitive Re ->
   RelationClasses.Transitive Ru ->
@@ -395,6 +363,63 @@ Proof.
   etransitivity; tea.
 Qed.
 
+Lemma unlift_eq n k t t' : lift n k t = lift n k t' -> t = t'.
+Proof.
+  intros eq_lift.
+  induction t in k, t', eq_lift |- * using term_forall_list_ind.
+  all: destruct t' ; cbn in eq_lift ; inversion eq_lift ; auto.
+  all: f_equal ; eauto.
+  - destruct (Nat.leb_spec0 k n0) ;
+    destruct (Nat.leb_spec0 k n1) ;
+    try lia. 
+  - clear eq_lift.
+    dependent induction X.
+    all: destruct l0 ; cbn in * ; inversion H1.
+    1: reflexivity.
+    f_equal ; eauto.
+  - destruct X as (?&?&?).
+    destruct p ; destruct p0 ; cbn in *.
+    f_equal ; eauto.
+    clear - a H1.
+    dependent induction a.
+    all: destruct pparams0 ; cbn in * ; inversion H1.
+    1: reflexivity.
+    f_equal ; eauto.
+  - clear -X0 H6.
+    dependent induction X0.
+    all: destruct brs ; cbn in * ; inversion H6.
+    1: reflexivity.
+    f_equal ; eauto.
+    destruct x ; destruct b ; cbn in *.
+    f_equal ; auto.
+    rewrite H0 in H1.
+    eapply p.
+    eassumption.
+  - subst.
+    replace #|m| with #|mfix| in *
+      by (now erewrite <- map_length, <- H0, map_length).
+    clear - X H0.
+    set l := #|mfix| + k in H0.
+    clearbody l.
+    dependent induction X.
+    all: destruct mfix ; cbn in * ; inversion H0.
+    1: reflexivity.
+    f_equal ; eauto.
+    destruct x ; destruct d ; cbn in * ; f_equal ; auto.
+    all: eapply p ; eauto.
+  - subst.
+    replace #|m| with #|mfix| in *
+      by (now erewrite <- map_length, <- H0, map_length).
+    clear - X H0.
+    set l := #|mfix| + k in H0.
+    clearbody l.
+    dependent induction X.
+    all: destruct mfix ; cbn in * ; inversion H0.
+    1: reflexivity.
+    f_equal ; eauto.
+    destruct x ; destruct d ; cbn in * ; f_equal ; auto.
+    all: eapply p ; eauto.
+Qed.
 Instance eq_term_upto_univ_trans Σ Re Rle napp :
   RelationClasses.Transitive Re ->
   RelationClasses.Transitive Rle ->
