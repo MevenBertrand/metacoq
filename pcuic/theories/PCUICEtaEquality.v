@@ -240,7 +240,6 @@ Proof.
       H : All2 _ ?args ?args' |- All2 _ ?args ?args' =>
         dependent induction H ; constructor ; intuition auto
     end.
-  Guarded.
   unfold eq_predicate in *.
   intuition auto.
   clear - a0 auxe.
@@ -420,13 +419,90 @@ Proof.
     destruct x ; destruct d ; cbn in * ; f_equal ; auto.
     all: eapply p ; eauto.
 Qed.
+
+Section CounterExample.
+
+  Variables (Re Rle : Universe.t -> Universe.t -> Prop) (Σ : global_env_ext)
+    (n : nat) (na : aname) (s : Universe.t).
+
+  Lemma eq1 : 
+    eq_term_upto_univ_napp_eta Σ Re Rle n
+      (tRel 0) (eta_expand na (tSort s) (tRel 0)).
+  Proof.
+      constructor.
+      constructor.
+  Qed.
+
+  Eval compute in (eta_expand na (tSort s) (tRel 0)).
+
+  Lemma eq2 :
+    eq_term_upto_univ_napp_eta Σ Re Rle n
+      (eta_expand na (tSort s) (tRel 0))
+      (tLambda na (tSort s) (tApp (tRel 1) (eta_expand na (tSort s) (tRel 0)))).
+  Proof.
+    apply eq_Lambda.
+    1: reflexivity.
+    constructor.
+    1: constructor.
+    constructor.
+    constructor.
+  Qed.
+
+  Lemma eq3 :
+    eq_term_upto_univ_napp_eta Σ Re Rle n
+      (tRel 0)
+      (tLambda na (tSort s) (tApp (tRel 1) (eta_expand na (tSort s) (tRel 0))))
+    -> False.
+  Proof.
+    intros h.
+    inversion h.
+  Qed.
+
+End CounterExample.
+
 Instance eq_term_upto_univ_trans Σ Re Rle napp :
   RelationClasses.Transitive Re ->
   RelationClasses.Transitive Rle ->
-  Transitive (eq_term_upto_univ_napp Σ Re Rle napp).
+  Transitive (eq_term_upto_univ_napp_eta Σ Re Rle napp).
 Proof.
-  intros he hle u v w e1 e2.
+  intros he hle u v w e e'.
   pose proof (@RelationClasses.transitivity _ (@eq_binder_annot name name) _).
+  induction e in w, e' |- * using eq_term_upto_univ_napp_eta_list_ind.
+  - constructor ; auto.
+  - clear e.
+    dependent induction e'.
+    + apply unlift_eq in H.
+      subst.
+      auto.
+    + constructor.
+      auto.
+    + clear IHe'.
+      dependent induction e'.
+      2:{ 
+
+    
+  - assumption.
+  - dependent induction e'.
+    + constructor.
+      apply IHe' ; auto.
+    + constructor.
+      pose proof (All2_prod _ _ _ _ X X0).
+      clear -X1 a.
+      induction X1 in args', a |- *.
+      all: inversion a ; constructor.
+      all: subst ; intuition auto.
+  -  
+
+
+
+
+  all: try solve [dependent induction e' ; econstructor ; intuition eauto].
+  2:{ dependent induction e'.
+      + econstructor. intuition.
+      + econstructor.
+
+  all: try solve [dependent destruction e' ; econstructor ; eauto].
+
   induction u in Rle, hle, v, w, napp, e1, e2 |- * using term_forall_list_ind.
   all: dependent destruction e1.
   all: try solve [ eauto ].
