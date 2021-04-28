@@ -9,236 +9,300 @@ From Equations.Prop Require Import DepElim.
 From Equations Require Import Equations.
 Set Equations With UIP.
 
-Notation " 'eta_expand' na A t " := (tLambda na A (tApp (lift0 1 t) (tRel 0)))
-                   (at level 30, na at level 0, A at level 0, t at level 0).
-
 (** ** Syntactic equality up-to universes and eta-expansion *)
 
-(** This extends eq_term_upto_univ_napp with new cases to treat eta equality
+(** This extends eq_term_upto_univ with new cases to treat eta equality
     To obtain a transitive relation even in an untyped setting, type annotations
     on abstractions are ignored *)
 
-Inductive eq_term_upto_univ_napp_eta Σ (Re Rle : Universe.t -> Universe.t -> Prop) (napp : nat) : term -> term -> Type :=
-| eq_Eta_l f na A g :
-    eq_term_upto_univ_napp_eta Σ Re Rle napp f g ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (eta_expand na A f) g
+Definition global_variance Σ gr :=
+  match gr with
+  | IndRef ind =>
+    match lookup_inductive Σ ind with
+    | Some (mdecl, idecl) => 
+      match destArity [] idecl.(ind_type) with
+      | Some (ctx, _) => mdecl.(ind_variance)
+      | None => None
+      end
+    | None => None
+    end
+  | ConstructRef ind k =>
+    match lookup_constructor Σ ind k with
+    | Some (mdecl, idecl, cdecl) => Some []
+        (** Fully applied constructors are always compared at the same supertype, 
+          which implies that no universe equality needs to be checked here. *)
+    | _ => None
+    end
+  | _ => None
+  end.
 
-| eq_Eta_r f g na A :
-    eq_term_upto_univ_napp_eta Σ Re Rle napp f g ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp f (eta_expand na A g)
+Definition R_global_instance Σ Re Rle gr :=
+  R_opt_variance Re Rle (global_variance Σ gr).
+
+Lemma R_global_instance_refl Σ Re Rle gr u : 
+  RelationClasses.Reflexive Re ->
+  RelationClasses.Reflexive Rle ->
+  R_global_instance Σ Re Rle gr u u.
+Proof.
+  intros rRE rRle.
+  rewrite /R_global_instance.
+  destruct global_variance as [v|] eqn:lookup.
+  - induction u in v |- *; simpl; auto;
+    unfold R_opt_variance in IHu; destruct v; simpl; auto.
+    split; auto.
+    destruct t; simpl; auto.
+  - apply Forall2_same; eauto.
+Qed.
+
+Lemma R_global_instance_sym Σ Re Rle gr u u' : 
+  RelationClasses.Symmetric Re ->
+  RelationClasses.Symmetric Rle ->
+  R_global_instance Σ Re Rle gr u' u ->
+  R_global_instance Σ Re Rle gr u u'.
+Proof.
+  intros rRE rRle.
+  rewrite /R_global_instance.
+  destruct global_variance as [v|] eqn:lookup.
+  - induction u in u', v |- *; destruct u'; simpl; auto;
+    destruct v as [|v vs]; unfold R_opt_variance in IHu; simpl; auto.
+    intros [Ra Ru']. split.
+    destruct v; simpl; auto.
+    apply IHu; auto.
+  - apply Forall2_symP; eauto.
+Qed.
+
+Inductive eq_term_upto_univ_eta
+  Σ (Re Rle : Universe.t -> Universe.t -> Prop) :
+  term -> term -> Type :=
 
 | eq_Rel n :
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tRel n) (tRel n)
+  eq_term_upto_univ_eta Σ Re Rle (tRel n) (tRel n)
 
 | eq_Evar e args args' :
-    All2 (eq_term_upto_univ_napp_eta Σ Re Re 0) args args' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tEvar e args) (tEvar e args')
+  All2 (eq_term_upto_univ_eta Σ Re Re) args args' ->
+  eq_term_upto_univ_eta Σ Re Rle (tEvar e args) (tEvar e args')
 
 | eq_Var id :
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tVar id) (tVar id)
+  eq_term_upto_univ_eta Σ Re Rle (tVar id) (tVar id)
 
 | eq_Sort s s' :
-    Rle s s' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tSort s) (tSort s')
+  Rle s s' ->
+  eq_term_upto_univ_eta Σ Re Rle (tSort s) (tSort s')
 
 | eq_App t t' u u' :
-    eq_term_upto_univ_napp_eta Σ Re Rle (S napp) t t' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 u u' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tApp t u) (tApp t' u')
+  eq_term_upto_univ_eta Σ Re Rle t t' ->
+  eq_term_upto_univ_eta Σ Re Re u u' ->
+  eq_term_upto_univ_eta Σ Re Rle (tApp t u) (tApp t' u')
 
 | eq_Const c u u' :
-    R_universe_instance Re u u' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tConst c u) (tConst c u')
+  R_universe_instance Re u u' ->
+  eq_term_upto_univ_eta Σ Re Rle (tConst c u) (tConst c u')
 
 | eq_Ind i u u' :
-    R_global_instance Σ Re Rle (IndRef i) napp u u' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tInd i u) (tInd i u')
+  R_global_instance Σ Re Rle (IndRef i) u u' ->
+  eq_term_upto_univ_eta Σ Re Rle (tInd i u) (tInd i u')
 
 | eq_Construct i k u u' :
-    R_global_instance Σ Re Rle (ConstructRef i k) napp u u' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tConstruct i k u) (tConstruct i k u')
+  R_global_instance Σ Re Rle (ConstructRef i k) u u' ->
+  eq_term_upto_univ_eta Σ Re Rle (tConstruct i k u) (tConstruct i k u')
 
 | eq_Lambda na na' ty ty' t t' :
-    eq_binder_annot na na' ->
-    (* Domains are ignored **)
-    (* eq_term_upto_univ_napp_eta Σ Re Re 0 ty ty' -> *)
-    eq_term_upto_univ_napp_eta Σ Re Rle 0 t t' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tLambda na ty t) (tLambda na' ty' t')
+  (* Domains are ignored **)
+  (* eq_binder_annot na na' ->
+      eq_term_upto_univ_eta Σ Re Re 0 ty ty' -> *)
+  eq_term_upto_univ_eta Σ Re Rle t t' ->
+  eq_term_upto_univ_eta Σ Re Rle (tLambda na ty t) (tLambda na' ty' t')
+
+| eq_Eta_l f g na A :
+  ~ (isLambda f) ->
+  eq_term_upto_univ_eta Σ Re Rle (tApp (lift0 1 f) (tRel 0)) g ->
+  eq_term_upto_univ_eta Σ Re Rle f (tLambda na A g)
+
+| eq_Eta_r f g na A :
+  ~ (isLambda g) ->
+  eq_term_upto_univ_eta Σ Re Rle f (tApp (lift0 1 g) (tRel 0)) ->
+  eq_term_upto_univ_eta Σ Re Rle (tLambda na A f) g
 
 | eq_Prod na na' a a' b b' :
-    eq_binder_annot na na' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 a a' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle 0 b b' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tProd na a b) (tProd na' a' b')
+  eq_binder_annot na na' ->
+  eq_term_upto_univ_eta Σ Re Re a a' ->
+  eq_term_upto_univ_eta Σ Re Rle b b' ->
+  eq_term_upto_univ_eta Σ Re Rle (tProd na a b) (tProd na' a' b')
 
 | eq_LetIn na na' t t' ty ty' u u' :
-    eq_binder_annot na na' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 t t' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 ty ty' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle 0 u u' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tLetIn na t ty u) (tLetIn na' t' ty' u')
+  eq_binder_annot na na' ->
+  eq_term_upto_univ_eta Σ Re Re t t' ->
+  eq_term_upto_univ_eta Σ Re Re ty ty' ->
+  eq_term_upto_univ_eta Σ Re Rle u u' ->
+  eq_term_upto_univ_eta Σ Re Rle (tLetIn na t ty u) (tLetIn na' t' ty' u')
 
 | eq_Case indn p p' c c' brs brs' :
-    eq_predicate (eq_term_upto_univ_napp_eta Σ Re Re 0) Re p p' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 c c' ->
-    All2 (fun x y =>
-      eq_context_gen eq eq (bcontext x) (bcontext y) *
-      eq_term_upto_univ_napp_eta Σ Re Re 0 (bbody x) (bbody y)
-    ) brs brs' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tCase indn p c brs) (tCase indn p' c' brs')
+  (* todo *)
+  eq_predicate (eq_term_upto_univ_eta Σ Re Re) Re p p' ->
+  eq_term_upto_univ_eta Σ Re Re c c' ->
+  All2 (fun x y =>
+    eq_context_gen eq eq (bcontext x) (bcontext y) ×
+    eq_term_upto_univ_eta Σ Re Re (bbody x) (bbody y)
+  ) brs brs' ->
+  eq_term_upto_univ_eta Σ Re Rle (tCase indn p c brs) (tCase indn p' c' brs')
 
 | eq_Proj p c c' :
-    eq_term_upto_univ_napp_eta Σ Re Re 0 c c' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tProj p c) (tProj p c')
+  eq_term_upto_univ_eta Σ Re Re c c' ->
+  eq_term_upto_univ_eta Σ Re Rle (tProj p c) (tProj p c')
 
 | eq_Fix mfix mfix' idx :
-    All2 (fun x y =>
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dtype) y.(dtype) *
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dbody) y.(dbody) *
-      (x.(rarg) = y.(rarg)) *
-      eq_binder_annot x.(dname) y.(dname)
-    )%type mfix mfix' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tFix mfix idx) (tFix mfix' idx)
+  All2 (fun x y =>
+    eq_term_upto_univ_eta Σ Re Re x.(dtype) y.(dtype) *
+    eq_term_upto_univ_eta Σ Re Re x.(dbody) y.(dbody) *
+    (x.(rarg) = y.(rarg)) ×
+    eq_binder_annot x.(dname) y.(dname)
+  )%type mfix mfix' ->
+  eq_term_upto_univ_eta Σ Re Rle (tFix mfix idx) (tFix mfix' idx)
 
 | eq_CoFix mfix mfix' idx :
-    All2 (fun x y =>
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dtype) y.(dtype) *
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dbody) y.(dbody) *
-      (x.(rarg) = y.(rarg)) *
-      eq_binder_annot x.(dname) y.(dname)
-    ) mfix mfix' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle napp (tCoFix mfix idx) (tCoFix mfix' idx)
-    
-| eq_Prim i : eq_term_upto_univ_napp_eta Σ Re Rle napp (tPrim i) (tPrim i).
+  All2 (fun x y =>
+    eq_term_upto_univ_eta Σ Re Re x.(dtype) y.(dtype) ×
+    eq_term_upto_univ_eta Σ Re Re x.(dbody) y.(dbody) ×
+    (x.(rarg) = y.(rarg)) *
+    eq_binder_annot x.(dname) y.(dname)
+  ) mfix mfix' ->
+  eq_term_upto_univ_eta Σ Re Rle (tCoFix mfix idx) (tCoFix mfix' idx)
+  
+| eq_Prim i : eq_term_upto_univ_eta Σ Re Rle (tPrim i) (tPrim i).
 
-Lemma eq_term_upto_univ_napp_eta_list_ind
+
+Lemma eq_term_upto_univ_eta_list_ind
   Σ Re P :
 
-  (forall Rle napp f na A g,
-    eq_term_upto_univ_napp_eta Σ Re Rle napp f g ->
-    P Rle napp f g ->
-    P Rle napp (eta_expand na A f) g) ->
+  (forall Rle f g na A,
+    ~ isLambda f ->
+    eq_term_upto_univ_eta Σ Re Rle (tApp (lift0 1 f) (tRel 0)) g ->
+    P Rle (tApp (lift0 1 f) (tRel 0)) g ->
+    P Rle f (tLambda na A g)) ->
 
-  (forall Rle napp f na A g,
-    eq_term_upto_univ_napp_eta Σ Re Rle napp f g ->
-    P Rle napp f g ->
-    P Rle napp f (eta_expand na A g)) ->
+  (forall Rle f g na A,
+    ~ isLambda g ->
+    eq_term_upto_univ_eta Σ Re Rle f (tApp (lift0 1 g) (tRel 0)) ->
+    P Rle f (tApp (lift0 1 g) (tRel 0)) ->
+    P Rle (tLambda na A f) g) ->
 
-  (forall Rle napp n,
-    P Rle napp (tRel n) (tRel n)) ->
+  (forall Rle n,
+    P Rle (tRel n) (tRel n)) ->
 
-  (forall Rle napp e args args',
-    All2 (eq_term_upto_univ_napp_eta Σ Re Re 0) args args' ->
-    All2 (P Re 0) args args' ->
-    P Rle napp (tEvar e args) (tEvar e args')) ->
+  (forall Rle e args args',
+    All2 (eq_term_upto_univ_eta Σ Re Re) args args' ->
+    All2 (P Re) args args' ->
+    P Rle (tEvar e args) (tEvar e args')) ->
 
-  (forall Rle napp id,
-    P Rle napp (tVar id) (tVar id)) ->
+  (forall Rle id,
+    P Rle (tVar id) (tVar id)) ->
 
-  (forall (Rle : Universe.t -> Universe.t -> Prop) napp s s',
+  (forall (Rle : Universe.t -> Universe.t -> Prop) s s',
     Rle s s' ->
-    P Rle napp (tSort s) (tSort s')) ->
+    P Rle (tSort s) (tSort s')) ->
 
-  (forall Rle napp t t' u u',
-    eq_term_upto_univ_napp_eta Σ Re Rle (S napp) t t' ->
-    P Rle (S napp) t t' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 u u' ->
-    P Re 0 u u' ->
-    P Rle napp (tApp t u) (tApp t' u') ) ->
+  (forall Rle t t' u u',
+    eq_term_upto_univ_eta Σ Re Rle t t' ->
+    P Rle t t' ->
+    eq_term_upto_univ_eta Σ Re Re u u' ->
+    P Re u u' ->
+    P Rle (tApp t u) (tApp t' u')) ->
 
-  (forall Rle napp c u u',
+  (forall Rle c u u',
     R_universe_instance Re u u' ->
-    P Rle napp (tConst c u) (tConst c u')) ->
+    P Rle (tConst c u) (tConst c u')) ->
 
-  (forall Rle napp i u u',
-    R_global_instance Σ Re Rle (IndRef i) napp u u' ->
-    P Rle napp (tInd i u) (tInd i u') ) ->
+  (forall Rle i u u',
+    R_global_instance Σ Re Rle (IndRef i) u u' ->
+    P Rle (tInd i u) (tInd i u') ) ->
 
-  (forall Rle napp i k u u',
-    R_global_instance Σ Re Rle (ConstructRef i k) napp u u' ->
-    P Rle napp (tConstruct i k u) (tConstruct i k u') ) ->
+  (forall Rle i k u u',
+    R_global_instance Σ Re Rle (ConstructRef i k) u u' ->
+    P Rle (tConstruct i k u) (tConstruct i k u') ) ->
 
-  (forall Rle napp na na' ty ty' t t',
+  (forall Rle na na' ty ty' t t',
+    eq_term_upto_univ_eta Σ Re Rle t t' ->
+    P Rle t t' ->
+    P Rle (tLambda na ty t) (tLambda na' ty' t')) ->
+
+  (forall Rle na na' a a' b b',
     eq_binder_annot na na' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle 0 t t' ->
-    P Rle 0 t t' ->
-    P Rle napp (tLambda na ty t) (tLambda na' ty' t')) ->
+    eq_term_upto_univ_eta Σ Re Re a a' ->
+    P Re a a' ->
+    eq_term_upto_univ_eta Σ Re Rle b b' ->
+    P Rle b b' ->
+    P Rle (tProd na a b) (tProd na' a' b') ) ->
 
-  (forall Rle napp na na' a a' b b',
+  (forall Rle na na' t t' ty ty' u u',
     eq_binder_annot na na' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 a a' ->
-    P Re 0 a a' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle 0 b b' ->
-    P Rle 0 b b' ->
-    P Rle napp (tProd na a b) (tProd na' a' b') ) ->
+    eq_term_upto_univ_eta Σ Re Re t t' ->
+    P Re t t' ->
+    eq_term_upto_univ_eta Σ Re Re ty ty' ->
+    P Re ty ty' ->
+    eq_term_upto_univ_eta Σ Re Rle u u' ->
+    P Rle u u' ->
+    P Rle (tLetIn na t ty u) (tLetIn na' t' ty' u')) ->
 
-  (forall Rle napp na na' t t' ty ty' u u',
-    eq_binder_annot na na' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 t t' ->
-    P Re 0 t t' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 ty ty' ->
-    P Re 0 ty ty' ->
-    eq_term_upto_univ_napp_eta Σ Re Rle 0 u u' ->
-    P Rle 0 u u' ->
-    P Rle napp (tLetIn na t ty u) (tLetIn na' t' ty' u')) ->
-
-  (forall Rle napp indn p p' c c' brs brs',
+  (forall Rle indn p p' c c' brs brs',
     eq_predicate (fun u v =>
-     (eq_term_upto_univ_napp_eta Σ Re Re 0 u v) × P Re 0 u v)
+     (eq_term_upto_univ_eta Σ Re Re u v) × P Re u v)
     Re p p' ->
-    eq_term_upto_univ_napp_eta Σ Re Re 0 c c' ->
-    P Re 0 c c' ->
+    eq_term_upto_univ_eta Σ Re Re c c' ->
+    P Re c c' ->
     All2 (fun x y =>
       eq_context_gen eq eq (bcontext x) (bcontext y) ×
-      eq_term_upto_univ_napp_eta Σ Re Re 0 (bbody x) (bbody y) ×
-      P Re 0 (bbody x) (bbody y)
+      eq_term_upto_univ_eta Σ Re Re (bbody x) (bbody y) ×
+      P Re (bbody x) (bbody y)
     ) brs brs' ->
-    P Rle napp (tCase indn p c brs) (tCase indn p' c' brs') ) ->
+    P Rle (tCase indn p c brs) (tCase indn p' c' brs') ) ->
 
-  (forall Rle napp p c c',
-    eq_term_upto_univ_napp_eta Σ Re Re 0 c c' ->
-    P Re 0 c c' ->
-    P Rle napp (tProj p c) (tProj p c') ) ->
+  (forall Rle p c c',
+    eq_term_upto_univ_eta Σ Re Re c c' ->
+    P Re c c' ->
+    P Rle (tProj p c) (tProj p c') ) ->
 
-  (forall Rle napp mfix mfix' idx,
+  (forall Rle mfix mfix' idx,
     All2 (fun x y =>
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dtype) y.(dtype) ×
-      P Re 0 x.(dtype) y.(dtype) ×
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dbody) y.(dbody) ×
-      P Re 0 x.(dbody) y.(dbody) ×
+      eq_term_upto_univ_eta Σ Re Re x.(dtype) y.(dtype) ×
+      P Re x.(dtype) y.(dtype) ×
+      eq_term_upto_univ_eta Σ Re Re x.(dbody) y.(dbody) ×
+      P Re x.(dbody) y.(dbody) ×
       x.(rarg) = y.(rarg) ×
       eq_binder_annot x.(dname) y.(dname)
     ) mfix mfix' ->
-    P Rle napp (tFix mfix idx) (tFix mfix' idx) ) ->
+    P Rle (tFix mfix idx) (tFix mfix' idx) ) ->
 
-  (forall Rle napp mfix mfix' idx,
+  (forall Rle mfix mfix' idx,
     All2 (fun x y =>
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dtype) y.(dtype) ×
-      P Re 0 x.(dtype) y.(dtype) ×
-      eq_term_upto_univ_napp_eta Σ Re Re 0 x.(dbody) y.(dbody) ×
-      P Re 0 x.(dbody) y.(dbody) ×
+      eq_term_upto_univ_eta Σ Re Re x.(dtype) y.(dtype) ×
+      P Re x.(dtype) y.(dtype) ×
+      eq_term_upto_univ_eta Σ Re Re x.(dbody) y.(dbody) ×
+      P Re x.(dbody) y.(dbody) ×
       x.(rarg) = y.(rarg) ×
       eq_binder_annot x.(dname) y.(dname)
     ) mfix mfix' ->
-    P Rle napp (tCoFix mfix idx) (tCoFix mfix' idx) ) ->
+    P Rle (tCoFix mfix idx) (tCoFix mfix' idx) ) ->
     
-  (forall Rle napp i,
-    P Rle napp (tPrim i) (tPrim i) ) ->
+  (forall Rle i,
+    P Rle (tPrim i) (tPrim i) ) ->
   
-  forall Rle napp u v,
-    eq_term_upto_univ_napp_eta Σ Re Rle napp u v -> P Rle napp u v.
+  forall Rle u v,
+    eq_term_upto_univ_eta Σ Re Rle u v -> P Rle u v.
 Proof.
   intros until Rle. revert Rle.
-  fix auxe 5.
+  fix auxe 4.
   move auxe at top.
-  intros Rle napp u v h.
-  destruct h;
+  intros Rle u v h.
+  destruct h ;
   match goal with
       H : _ |- _ => apply H ; auto
   end.
-  1,3-5: match goal with
-      H : All2 _ ?args ?args' |- All2 _ ?args ?args' =>
+  4,5: generalize dependent (fix_context mfix) ; intros.
+  all:
+    match goal with
+    | H : All2 _ ?args ?args' |- All2 _ ?args ?args' =>
         dependent induction H ; constructor ; intuition auto
+    | _ => idtac
     end.
   unfold eq_predicate in *.
   intuition auto.
@@ -251,8 +315,6 @@ Proof.
   all: assumption.
 Defined.
 
-Notation eq_term_upto_univ_eta Σ Re Rle := (eq_term_upto_univ_napp_eta Σ Re Rle 0).
-
 (* ** Syntactic conversion up-to universes *)
 
 Definition eq_term_eta `{checker_flags} Σ φ :=
@@ -263,19 +325,18 @@ Definition eq_term_eta `{checker_flags} Σ φ :=
 Definition leq_term_eta `{checker_flags} Σ φ :=
   eq_term_upto_univ_eta Σ (eq_universe φ) (leq_universe φ).
 
-Instance eq_term_upto_univ_eta_refl Σ Re Rle napp :
+Instance eq_term_upto_univ_eta_refl Σ Re Rle :
   RelationClasses.Reflexive Re ->
   RelationClasses.Reflexive Rle ->
-  Reflexive (eq_term_upto_univ_napp_eta Σ Re Rle napp).
+  Reflexive (eq_term_upto_univ_eta Σ Re Rle).
 Proof.
   intros hRe hRle t.
-  induction t in napp, Rle, hRle |- * using term_forall_list_ind.
+  induction t in Rle, hRle |- * using term_forall_list_ind.
   all: simpl.
-  all: try constructor. all: eauto.
-  all: try solve [eapply All_All2 ; eauto].
-  all: try solve [eapply Forall2_same ; eauto].
-  all: try solve [unfold eq_predicate; solve_all; eapply All_All2; eauto].
-  - apply R_global_instance_refl; auto.
+  all: constructor ; eauto.
+  - eapply All_All2 ; eauto.
+  - eapply Forall2_same ; eauto.
+  - apply R_global_instance_refl ; auto.
   - apply R_global_instance_refl; auto.
   - destruct X as [? [? ?]].
     unfold eq_predicate; solve_all.
@@ -297,17 +358,17 @@ Proof.
   apply eq_term_upto_univ_eta_refl; exact _.
 Qed.
 
-Derive Signature for eq_term_upto_univ_napp_eta.
+Derive Signature for eq_term_upto_univ_eta.
 
-Instance eq_term_upto_univ_eta_sym Σ Re Rle napp :
+Instance eq_term_upto_univ_eta_sym Σ Re Rle :
   RelationClasses.Symmetric Re ->
   RelationClasses.Symmetric Rle ->
-  Symmetric (eq_term_upto_univ_napp_eta Σ Re Rle napp).
+  Symmetric (eq_term_upto_univ_eta Σ Re Rle).
 Proof.
   intros he hle u v e.
   pose proof (@RelationClasses.symmetry _ (@eq_binder_annot name name) _).
-  induction e using eq_term_upto_univ_napp_eta_list_ind.
-  all: try solve [
+  induction e using eq_term_upto_univ_eta_list_ind.
+  all: intros ; try solve [
     econstructor ; eauto using R_global_instance_sym ;
     try eapply Forall2_symP ; eauto
   ].
@@ -362,207 +423,274 @@ Proof.
   etransitivity; tea.
 Qed.
 
-Lemma unlift_eq n k t t' : lift n k t = lift n k t' -> t = t'.
+Lemma lift_eq_term Σ Re Rle n k t t' :
+  eq_term_upto_univ_eta Σ Re Rle t t' ->
+  eq_term_upto_univ_eta Σ Re Rle (lift n k t) (lift n k t').
 Proof.
-  intros eq_lift.
-  induction t in k, t', eq_lift |- * using term_forall_list_ind.
-  all: destruct t' ; cbn in eq_lift ; inversion eq_lift ; auto.
-  all: f_equal ; eauto.
-  - destruct (Nat.leb_spec0 k n0) ;
-    destruct (Nat.leb_spec0 k n1) ;
-    try lia. 
-  - clear eq_lift.
-    dependent induction X.
-    all: destruct l0 ; cbn in * ; inversion H1.
-    1: reflexivity.
-    f_equal ; eauto.
-  - destruct X as (?&?&?).
-    destruct p ; destruct p0 ; cbn in *.
-    f_equal ; eauto.
-    clear - a H1.
-    dependent induction a.
-    all: destruct pparams0 ; cbn in * ; inversion H1.
-    1: reflexivity.
-    f_equal ; eauto.
-  - clear -X0 H6.
-    dependent induction X0.
-    all: destruct brs ; cbn in * ; inversion H6.
-    1: reflexivity.
-    f_equal ; eauto.
-    destruct x ; destruct b ; cbn in *.
-    f_equal ; auto.
-    rewrite H0 in H1.
-    eapply p.
-    eassumption.
-  - subst.
-    replace #|m| with #|mfix| in *
-      by (now erewrite <- map_length, <- H0, map_length).
-    clear - X H0.
-    set l := #|mfix| + k in H0.
-    clearbody l.
-    dependent induction X.
-    all: destruct mfix ; cbn in * ; inversion H0.
-    1: reflexivity.
-    f_equal ; eauto.
-    destruct x ; destruct d ; cbn in * ; f_equal ; auto.
-    all: eapply p ; eauto.
-  - subst.
-    replace #|m| with #|mfix| in *
-      by (now erewrite <- map_length, <- H0, map_length).
-    clear - X H0.
-    set l := #|mfix| + k in H0.
-    clearbody l.
-    dependent induction X.
-    all: destruct mfix ; cbn in * ; inversion H0.
-    1: reflexivity.
-    f_equal ; eauto.
-    destruct x ; destruct d ; cbn in * ; f_equal ; auto.
-    all: eapply p ; eauto.
+  intros eq.
+  revert k.
+  dependent induction eq using eq_term_upto_univ_eta_list_ind.
+  all: cbn ; intros ; constructor ; auto.
+  - destruct f ; auto.
+  - rewrite permute_lift.
+    1: by lia.
+    replace (k + 1) with (S k) by lia.
+    by apply IHeq.
+  - destruct g ; auto.
+  - rewrite permute_lift.
+    1: by lia.
+    replace (k + 1) with (S k) by lia.
+    by apply IHeq.
+  - apply All2_map.
+    eapply All2_impl ; eauto.
+  - unfold eq_predicate in *.
+    intuition.
+    + apply All2_map.
+      eapply All2_impl.
+      1: eassumption.
+      intuition.
+    + clear -a1 b0.
+      destruct p, p'; cbn in *.
+      by apply All2_fold_length in a1 as []. 
+  - apply All2_map.
+    eapply All2_impl ; eauto.
+    cbn ; intros ? ? (a&?&?).
+    split ; auto.
+    by apply All2_fold_length in a as [].
+  - apply All2_map.
+    eapply All2_impl ; eauto.
+    intros [] [] (?&?&?&?&?&?).
+    repeat split ; cbn in * ; auto.
+    by apply All2_length in X as [].
+  - apply All2_map.
+    eapply All2_impl ; eauto.
+    intros [] [] (?&?&?&?&?&?).
+    repeat split ; cbn in * ; auto.
+    by apply All2_length in X as [].
 Qed.
 
-Section CounterExample.
+(* Lemma unlift_eq_term_r Σ Re Rle t u n k :
+  eq_term_upto_univ_eta Σ Re Rle (lift n k t) u ->
+  {u' & u = lift n k u' × eq_term_upto_univ_eta Σ Re Rle t u' }.
+Proof.
+  intros eq_lift.
+  dependent induction eq_lift using eq_term_upto_univ_eta_list_ind.
+  - specialize (IHeq_lift Rle (lift0 1 t) g n (S k)).
+  3:{ destruct t ; cbn in H ; inversion H.
+      (exists (tRel n1)).
+      cbn.
+      split ; constructor.
+  } *)
 
-  Variables (Re Rle : Universe.t -> Universe.t -> Prop) (Σ : global_env_ext)
-    (n : nat) (na : aname) (s : Universe.t).
+Lemma unlift_eq_term Σ Re Rle t u n k:
+  eq_term_upto_univ_eta Σ Re Rle (lift n k t) (lift n k u) ->
+  eq_term_upto_univ_eta Σ Re Rle t u.
+Proof.
+  intros eq_lift.
+  dependent induction eq_lift using eq_term_upto_univ_eta_list_ind.
+  all:
+  repeat match goal with
+    | H : (lift _ _ ?t) = _ _ |- _ => destruct t ; inversion H ; subst ; clear H
+  end ;
+  try constructor ;
+  try solve [
+    match goal with 
+      IH : _ |- _ => solve [eapply IH ; repeat f_equal ; auto]
+    end ].
+  - destruct t ; cbn in H ; auto.
+  - eapply IHeq_lift.
+    repeat f_equal.
+    cbn.
+    f_equal.
+    symmetry.
+    replace (S k) with (k + 1) by lia.
+    apply permute_lift.
+    lia.
+  - destruct u ; cbn in H ; auto.
+  - eapply IHeq_lift.
+    repeat f_equal.
+    cbn.
+    f_equal.
+    symmetry.
+    replace (S k) with (k + 1) by lia.
+    apply permute_lift.
+    lia.
+  - suff ? : n = n1 by (subst ; constructor).
+    destruct (Nat.leb_spec0 k n) ; destruct (Nat.leb_spec0 k n1).
+    all: lia.
+  - eapply All2_impl.
+    1: eapply All2_map_inv ; eassumption.
+    intros ? ? H ; eapply H.
+    repeat f_equal.
+  - unfold eq_predicate in *.
+    destruct X as (?&?&?&?&?).
+    repeat split ; eauto.
+    + clear - a.
+      destruct p1, p0 ; cbn in *.
+      eapply All2_impl.
+      1: eapply All2_map_inv ; eassumption.
+      intros ? ? H ; eapply H.
+      repeat f_equal.
+    + clear - e0 a0.
+      destruct p1, p0 ; cbn in *.
+      eapply e0.
+      apply All2_fold_length in a0 as [].
+      repeat f_equal.
+  - eapply All2_impl.
+    1: eapply All2_map_inv ; eassumption.
+    cbn in *.
+    intros ? ? (?&?&?).
+    split ; auto.
+    eapply e0.
+    unfold id in a ; apply All2_fold_length in a as [].
+    repeat f_equal.
+  - eapply All2_impl.
+    1: eapply All2_map_inv ; eassumption.
+    cbn in *.
+    intros ? ? (?&?&?&?&?&?).
+    repeat split ; auto.
+    + eapply e0.
+      repeat f_equal.
+    + apply All2_length in X.
+      rewrite !map_length in X.
+      destruct X.
+      eapply e2.
+      repeat f_equal.
+  - eapply All2_impl.
+    1: eapply All2_map_inv ; eassumption.
+    cbn in *.
+    intros ? ? (?&?&?&?&?&?).
+    repeat split ; auto.
+    + eapply e0.
+      repeat f_equal.
+    + apply All2_length in X.
+      rewrite !map_length in X.
+      destruct X.
+      eapply e2.
+      repeat f_equal.
+Qed.
 
-  Lemma eq1 : 
-    eq_term_upto_univ_napp_eta Σ Re Rle n
-      (tRel 0) (eta_expand na (tSort s) (tRel 0)).
-  Proof.
-      constructor.
-      constructor.
-  Qed.
+Lemma eq_term_admissible Σ Re Rle t u :
+  eq_term_upto_univ_eta Σ Re Rle (tApp (lift0 1 t) (tRel 0)) (tApp (lift0 1 u) (tRel 0)) ->
+  eq_term_upto_univ_eta Σ Re Rle t u.
+Proof.
+  intros H.
+  inversion_clear H.
+  clear X0.
+  eapply unlift_eq_term.
+  eassumption.
+Qed.
 
-  Eval compute in (eta_expand na (tSort s) (tRel 0)).
+Fixpoint lift_applies (n : nat) (l : list nat) (t : term) :=
+  match l with
+  | [] => lift0 n t
+  | m :: l' => tApp (lift_applies n l' t) (tRel m)
+  end.
 
-  Lemma eq2 :
-    eq_term_upto_univ_napp_eta Σ Re Rle n
-      (eta_expand na (tSort s) (tRel 0))
-      (tLambda na (tSort s) (tApp (tRel 1) (eta_expand na (tSort s) (tRel 0)))).
-  Proof.
-    apply eq_Lambda.
-    1: reflexivity.
-    constructor.
-    1: constructor.
-    constructor.
-    constructor.
-  Qed.
+Lemma lift_lift_applies (n : nat) (l : list nat) (t : term) :
+  (lift0 1 (lift_applies n l t)) = lift_applies (S n) (map S l) t.
+Proof.
+  induction l.
+  - cbn.
+    symmetry.
+    apply simpl_lift0.
+  - cbn.
+    rewrite IHl.
+    reflexivity.
+Qed.
 
-  Lemma eq3 :
-    eq_term_upto_univ_napp_eta Σ Re Rle n
-      (tRel 0)
-      (tLambda na (tSort s) (tApp (tRel 1) (eta_expand na (tSort s) (tRel 0))))
-    -> False.
-  Proof.
-    intros h.
-    inversion h.
-  Qed.
+Definition isEta {Σ Re Rle t t'} (e : eq_term_upto_univ_eta Σ Re Rle t t') :=
+  match e with
+  | eq_Eta_l _ _ _ _ _ _ | eq_Eta_r _ _ _ _ _ _ => true
+  | _ => false
+  end.
 
-End CounterExample.
-
-Instance eq_term_upto_univ_trans Σ Re Rle napp :
+Lemma lift_applies_eta Σ Re Rle t t' :
   RelationClasses.Transitive Re ->
   RelationClasses.Transitive Rle ->
-  Transitive (eq_term_upto_univ_napp_eta Σ Re Rle napp).
+  ~ isLambda t ->
+  ~ isLambda t' ->
+  (forall w' n (e : eq_term_upto_univ_eta Σ Re Rle (lift0 n t') w'),
+    ~ isEta e -> eq_term_upto_univ_eta Σ Re Rle (lift0 n t) w') ->
+  forall w,
+  eq_term_upto_univ_eta Σ Re Rle t' w ->
+  eq_term_upto_univ_eta Σ Re Rle t w.
 Proof.
-  intros he hle u v w e e'.
+  intros he hle iLt iLt' base w.
+  replace t' with (lift_applies 0 [] t') by apply lift0_id.
+  replace t with (lift_applies 0 [] t) by apply lift0_id.
+  generalize 0, (@nil nat).
+  intros n l e.
+  induction w in n, l, e |- *.
+  all: try solve [destruct l ; cbn in * ;
+    [ eapply (base _ _ e) ; destruct t' ; cbn in * ; by dependent inversion e| by inversion e]].
+  - constructor.
+    + destruct l ; cbn ; auto.
+      destruct t ; cbn in * ; congruence.
+    + rewrite lift_lift_applies.
+      change (tApp _ _) with (lift_applies (S n) (0 :: map S l) t).
+      apply IHw2.
+      inversion e ; subst.
+      1,3: destruct l, t' ; cbn in * ; congruence.
+      rewrite lift_lift_applies in X.
+      assumption.
+  - destruct l.
+    + cbn in *.
+      apply (base _ _ e).
+      destruct t' ; cbn in * ; auto.
+      all: dependent inversion e ; cbn ; auto.
+    + cbn in *.
+      inversion e ; subst.
+      constructor.
+      2: auto.
+      auto.
+Qed.
+
+
+Instance eq_term_upto_univ_trans Σ Re Rle:
+  RelationClasses.Transitive Re ->
+  RelationClasses.Transitive Rle ->
+  Transitive (eq_term_upto_univ_eta Σ Re Rle).
+Proof.
+  intros he hle u v w e.
+  (* replace v with (lift0 0 v) by apply lift0_id.
+  replace u with (lift0 0 u) by apply lift0_id.
+  generalize 0 at 1 3 ; generalize 0. *)
+  intros e'.
   pose proof (@RelationClasses.transitivity _ (@eq_binder_annot name name) _).
-  induction e in w, e' |- * using eq_term_upto_univ_napp_eta_list_ind.
-  - constructor ; auto.
-  - clear e.
-    dependent induction e'.
-    + apply unlift_eq in H.
-      subst.
-      auto.
-    + constructor.
-      auto.
-    + clear IHe'.
-      dependent induction e'.
-      2:{ 
+  induction e in hle, w, e' |- * using eq_term_upto_univ_eta_list_ind.
 
-    
+  - cbn in e'.
+  inversion e' ; subst.
+  + constructor ; auto.
+  + cbn in * ; congruence.
+  + apply eq_term_admissible ; auto.
+
+  - destruct (reflect_dec _ _ (Bool.eqb_spec (isLambda w) true)) as [isL|nisL].
+    + destruct w ; inversion_clear isL.
+      inversion e' ; subst.
+      1,3: cbn in H0 ; congruence.
+      constructor.
+      auto.
+    + constructor ; auto.
+      apply IHe ; auto.
+      constructor.
+      2: by constructor.
+      eapply lift_eq_term ; eauto.
+
   - assumption.
-  - dependent induction e'.
-    + constructor.
-      apply IHe' ; auto.
-    + constructor.
-      pose proof (All2_prod _ _ _ _ X X0).
-      clear -X1 a.
-      induction X1 in args', a |- *.
-      all: inversion a ; constructor.
-      all: subst ; intuition auto.
-  -  
 
-
-
-
-  all: try solve [dependent induction e' ; econstructor ; intuition eauto].
-  2:{ dependent induction e'.
-      + econstructor. intuition.
-      + econstructor.
-
-  all: try solve [dependent destruction e' ; econstructor ; eauto].
-
-  induction u in Rle, hle, v, w, napp, e1, e2 |- * using term_forall_list_ind.
-  all: dependent destruction e1.
-  all: try solve [ eauto ].
-  all: try solve [
-    dependent destruction e2 ; econstructor ; eauto;
-    try eapply Forall2_trans ; eauto
-  ].
-  - dependent destruction e2.
-    econstructor.
-    eapply All2_All_mix_left in X as h; eauto.
-    clear a X.
-    induction h in a0, args'0 |- *.
-    + assumption.
-    + dependent destruction a0. constructor ; eauto.
-      destruct r as [h1 h2]. eauto.
-  - dependent destruction e2.
+  - eapply lift_applies_eta ; auto.
+    3: eassumption.
+    1: cbn ; congruence.
+    clear w e'.
+    intros w n e'.
+    cbn in *.
+    dependent inversion_clear e'.
+    2: cbn ; congruence.
+    intros _.
     constructor.
-    eapply R_global_instance_trans; eauto.
-  - dependent destruction e2.
-    constructor.
-    eapply R_global_instance_trans; eauto.
-  - dependent destruction e2.
-    unfold eq_predicate in *.
-    !!solve_all.
-    econstructor; unfold eq_predicate in *; solve_all; eauto.
-    * clear -he hh1 hh2.
-      revert hh1 hh2. generalize (pparams p), p'.(pparams), p'0.(pparams).
-      intros l l' l''.
-      induction 1 in l'' |- *; auto. intros H; depelim H. constructor; auto.
-      eapply r; eauto. apply r.
-    * etransitivity; eauto.
-    * eapply onctx_eq_ctx_trans in hh; eauto.
-      intros ???? -> ->; eauto.
-    * clear -H he a a0.
-      induction a in a0, brs'0 |- *.
-      + assumption.
-      + depelim a0. destruct p. constructor; auto.
-        destruct r as [[h1 h1'] [h2 h3]].
-        split.
-        eapply onctx_eq_ctx_trans in h1; eauto.
-        intros ???? -> ->;reflexivity.
-        eapply h1'; eauto.
-  - dependent destruction e2.
-    econstructor.
-    eapply All2_All_mix_left in X as h; eauto.
-    clear a X.
-    induction h in a0, mfix'0 |- *.
-    + assumption.
-    + dependent destruction a0. constructor ; eauto.
-      intuition eauto.
-      transitivity (rarg y); auto.
-  - dependent destruction e2.
-    econstructor.
-    eapply All2_All_mix_left in X as h; eauto.
-    clear a X.
-    induction h in a0, mfix'0 |- *.
-    + assumption.
-    + dependent destruction a0. constructor ; eauto.
-      intuition eauto.
-      transitivity (rarg y); auto.
+
 Qed.
 
 Instance eq_term_trans {cf:checker_flags} Σ φ : Transitive (eq_term Σ φ).
@@ -628,7 +756,7 @@ Proof.
   - intros x y z xy yz. eapply R_global_instance_trans; eauto; typeclasses eauto.
 Qed.
 
-Instance R_global_instance_antisym Σ Re Rle (hRe : RelationClasses.Equivalence Re) gr napp :
+Instance R_global_instance_antisym Σ Re Rle (hRe : RelationClasses.Equivalence Re) gr :
   RelationClasses.Antisymmetric _ Re Rle ->
   RelationClasses.Antisymmetric _ (R_global_instance Σ Re Re gr napp) (R_global_instance Σ Re Rle gr napp).
 Proof.
