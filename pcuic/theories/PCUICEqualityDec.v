@@ -2,7 +2,7 @@
 From Coq Require Import ProofIrrelevance ssreflect ssrbool.
 From MetaCoq.Template Require Import config utils uGraph.
 From MetaCoq.PCUIC Require Import PCUICAst PCUICAstUtils
-     PCUICReflect PCUICLiftSubst PCUICUnivSubst PCUICTyping PCUICGlobalEnv
+     PCUICReflect PCUICLiftSubst PCUICUnivSubst
      PCUICCumulativity PCUICEquality.
 
 Require Import Equations.Prop.DepElim.
