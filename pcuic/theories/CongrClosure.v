@@ -1,4 +1,5 @@
 (* Distributed under the terms of the MIT license. *)
+From Coq Require Import CMorphisms.
 From MetaCoq.Template Require Import config utils.
 From MetaCoq.PCUIC Require Import PCUICAst PCUICAstUtils PCUICPosition
      PCUICLiftSubst PCUICUnivSubst PCUICInduction
@@ -268,583 +269,1365 @@ Proof.
     constructor; auto.
 Qed.
 
-Local Open Scope type_scope.
-Inductive congr1 R (Σ : global_env) (Γ : context) : term -> term -> Type :=
+Section Congr1.
 
-| congr1_abs_ty na A A' t : congr1 R Σ Γ A A' -> congr1 R Σ Γ (tLambda na A t) (tLambda na A' t)
-| congr1_abs_tm na A t t' :
-    congr1 R Σ (Γ ,, vass na A) t t' -> congr1 R Σ Γ (tLambda na A t) (tLambda na A t')
+  Local Open Scope type_scope.
+  Inductive congr1 R (Σ : global_env) (Γ : context) : term -> term -> Type :=
 
-| congr1_let_def na b b' A t : congr1 R Σ Γ b b' -> congr1 R Σ Γ (tLetIn na b A t) (tLetIn na b' A t)
-| congr1_let_ty na b A A' t : congr1 R Σ Γ A A' -> congr1 R Σ Γ (tLetIn na b A t) (tLetIn na b A' t)
-| congr1_let_body na b A t t' : congr1 R Σ (Γ ,, vdef na b A) t t' -> congr1 R Σ Γ (tLetIn na b A t) (tLetIn na b A t')
+  | congr1_abs_ty na A A' t : congr1 R Σ Γ A A' -> congr1 R Σ Γ (tLambda na A t) (tLambda na A' t)
+  | congr1_abs_tm na A t t' :
+      congr1 R Σ (Γ ,, vass na A) t t' -> congr1 R Σ Γ (tLambda na A t) (tLambda na A t')
 
-| congr1_case_param ci p params' c brs :
-    OnOne2 (congr1 R Σ Γ) p.(pparams) params' ->
-    congr1 R Σ Γ (tCase ci p c brs)
-             (tCase ci (set_pparams p params') c brs)
-           
-| congr1_case_return ci p preturn' c brs :
-  congr1 R Σ (Γ ,,, inst_case_predicate_context p) p.(preturn) preturn' ->
-  congr1 R Σ Γ (tCase ci p c brs)
-          (tCase ci (set_preturn p preturn') c brs)
-    
-| congr1_case_discr ci p c c' brs :
-  congr1 R Σ Γ c c' -> 
-  congr1 R Σ Γ (tCase ci p c brs) (tCase ci p c' brs)
+  | congr1_let_def na b b' A t : congr1 R Σ Γ b b' -> congr1 R Σ Γ (tLetIn na b A t) (tLetIn na b' A t)
+  | congr1_let_ty na b A A' t : congr1 R Σ Γ A A' -> congr1 R Σ Γ (tLetIn na b A t) (tLetIn na b A' t)
+  | congr1_let_body na b A t t' : congr1 R Σ (Γ ,, vdef na b A) t t' -> congr1 R Σ Γ (tLetIn na b A t) (tLetIn na b A t')
 
-| congr1_case_brs ci p c brs brs' :    
-    OnOne2 (fun br br' =>
-      on_Trel_eq (congr1 R Σ (Γ ,,, inst_case_branch_context p br)) bbody bcontext br br')
-      brs brs' ->
-    congr1 R Σ Γ (tCase ci p c brs) (tCase ci p c brs')
-
-| congr1_proj p c c' : congr1 R Σ Γ c c' -> congr1 R Σ Γ (tProj p c) (tProj p c')
-
-| congr1_app_fun t t' u : congr1 R Σ Γ t t' -> congr1 R Σ Γ (tApp t u) (tApp t' u)
-| congr1_app_arg t u u' : congr1 R Σ Γ u u' -> congr1 R Σ Γ (tApp t u) (tApp t u')
-
-| congr1_prod_dom na A A' B : congr1 R Σ Γ A A' -> congr1 R Σ Γ (tProd na A B) (tProd na A' B)
-| congr1_prod_cod na A B B' : congr1 R Σ (Γ ,, vass na A) B B' ->
-                               congr1 R Σ Γ (tProd na A B) (tProd na A B')
-
-| congr1_evar ev l l' : OnOne2 (congr1 R Σ Γ) l l' -> congr1 R Σ Γ (tEvar ev l) (tEvar ev l')
-
-| congr1_fix_ty mfix mfix' idx :
-    OnOne2 (on_Trel_eq (congr1 R Σ Γ) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
-    congr1 R Σ Γ (tFix mfix idx) (tFix mfix' idx)
-
-| congr1_fix_body mfix mfix' idx :
-    OnOne2 (on_Trel_eq (congr1 R Σ (Γ ,,, fix_context mfix)) dbody (fun x => (dname x, dtype x, rarg x)))
-           mfix mfix' ->
-    congr1 R Σ Γ (tFix mfix idx) (tFix mfix' idx)
-
-| congr1_cofix_ty mfix mfix' idx :
-    OnOne2 (on_Trel_eq (congr1 R Σ Γ) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
-    congr1 R Σ Γ (tCoFix mfix idx) (tCoFix mfix' idx)
-
-| congr1_cofix_body mfix mfix' idx :
-    OnOne2 (on_Trel_eq (congr1 R Σ (Γ ,,, fix_context mfix)) dbody (fun x => (dname x, dtype x, rarg x)))
-           mfix mfix' ->
-    congr1 R Σ Γ (tCoFix mfix idx) (tCoFix mfix' idx)
-
-(* the generic constructor at the end so that congruence are preferred by the constructor tactic*)
-| congr1_base t t' : R Σ Γ t t' -> congr1 R Σ Γ t t'.
-
-
-
-Lemma congr1_ind_all :
-  forall R (Σ : global_env) (P : context -> term -> term -> Type),
-
-    (forall (Γ : context) (t t' : term),
-      R Σ Γ t t' -> P Γ t t') ->
-
-    (forall (Γ : context) (na : aname) (A A' t : term),
-    congr1 R Σ Γ A A' -> P Γ A A' -> P Γ (tLambda na A t) (tLambda na A' t)) ->
-
-    (forall (Γ : context) (na : aname) (A t t' : term),
-    congr1 R Σ (Γ,, vass na A) t t' -> P (Γ,, vass na A) t t' -> P Γ (tLambda na A t) (tLambda na A t')) ->
-
-    (forall (Γ : context) (na : aname) (b b' A t : term),
-    congr1 R Σ Γ b b' -> P Γ b b' -> P Γ (tLetIn na b A t) (tLetIn na b' A t)) ->
-
-    (forall (Γ : context) (na : aname) (b A A' t : term),
-    congr1 R Σ Γ A A' -> P Γ A A' -> P Γ (tLetIn na b A t) (tLetIn na b A' t)) ->
-
-    (forall (Γ : context) (na : aname) (b A t t' : term),
-    congr1 R Σ (Γ,, vdef na b A) t t' -> P (Γ,, vdef na b A) t t' ->
-    P Γ (tLetIn na b A t) (tLetIn na b A t')) ->
-
-    (forall (Γ : context) (ci : case_info) p params' c brs,
-      OnOne2 (Trel_conj (congr1 R Σ Γ) (P Γ)) p.(pparams) params' ->
-        P Γ (tCase ci p c brs)
-            (tCase ci (set_pparams p params') c brs)) ->
+  | congr1_case_param ci p params' c brs :
+      OnOne2 (congr1 R Σ Γ) p.(pparams) params' ->
+      congr1 R Σ Γ (tCase ci p c brs)
+              (tCase ci (set_pparams p params') c brs)
             
-    (forall (Γ : context) (ci : case_info) p preturn' c brs,
-      congr1 R Σ (Γ ,,, inst_case_predicate_context p) p.(preturn) preturn' ->
-      P (Γ ,,, inst_case_predicate_context p) p.(preturn) preturn' ->
-      P Γ (tCase ci p c brs)
-          (tCase ci (set_preturn p preturn') c brs)) ->
-    
-    (forall (Γ : context) (ind : case_info) (p : predicate term) (c c' : term) (brs : list (branch term)),
-    congr1 R Σ Γ c c' -> P Γ c c' -> P Γ (tCase ind p c brs) (tCase ind p c' brs)) ->
-
-    (forall (Γ : context) ci p c brs brs',
-      OnOne2 (fun br br' =>
-      (on_Trel_eq (Trel_conj (congr1 R Σ (Γ ,,, inst_case_branch_context p br)) 
-        (P (Γ ,,, inst_case_branch_context p br)))
-        bbody bcontext br br')) brs brs' ->
-      P Γ (tCase ci p c brs) (tCase ci p c brs')) ->
-
-    (forall (Γ : context) (p : projection) (c c' : term), congr1 R Σ Γ c c' -> P Γ c c' ->
-                                                          P Γ (tProj p c) (tProj p c')) ->
-
-    (forall (Γ : context) (M1 N1 : term) (M2 : term), congr1 R Σ Γ M1 N1 -> P Γ M1 N1 ->
-                                                      P Γ (tApp M1 M2) (tApp N1 M2)) ->
-
-    (forall (Γ : context) (M2 N2 : term) (M1 : term), congr1 R Σ Γ M2 N2 -> P Γ M2 N2 ->
-                                                      P Γ (tApp M1 M2) (tApp M1 N2)) ->
-
-    (forall (Γ : context) (na : aname) (M1 M2 N1 : term),
-    congr1 R Σ Γ M1 N1 -> P Γ M1 N1 -> P Γ (tProd na M1 M2) (tProd na N1 M2)) ->
-
-    (forall (Γ : context) (na : aname) (M2 N2 M1 : term),
-    congr1 R Σ (Γ,, vass na M1) M2 N2 -> P (Γ,, vass na M1) M2 N2 -> P Γ (tProd na M1 M2) (tProd na M1 N2)) ->
-
-    (forall (Γ : context) (ev : nat) (l l' : list term),
-        OnOne2 (Trel_conj (congr1 R Σ Γ) (P Γ)) l l' -> P Γ (tEvar ev l) (tEvar ev l')) ->
-
-    (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
-    OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ Γ) (P Γ)) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
-    P Γ (tFix mfix idx) (tFix mfix' idx)) ->
-
-    (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
-    OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ (Γ ,,, fix_context mfix))
-                                  (P (Γ ,,, fix_context mfix))) dbody
-                        (fun x => (dname x, dtype x, rarg x))) mfix mfix' ->
-    P Γ (tFix mfix idx) (tFix mfix' idx)) ->
-
-    (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
-    OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ Γ) (P Γ)) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
-    P Γ (tCoFix mfix idx) (tCoFix mfix' idx)) ->
-
-    (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
-    OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ (Γ ,,, fix_context mfix))
-                                  (P (Γ ,,, fix_context mfix))) dbody
-                        (fun x => (dname x, dtype x, rarg x))) mfix mfix' ->
-    P Γ (tCoFix mfix idx) (tCoFix mfix' idx)) ->
-
-    forall (Γ : context) (t t' : term), congr1 R Σ Γ t t' -> P Γ t t'.
-Proof.
-  intros. rename X19 into Xlast. revert Γ t t' Xlast.
-  fix aux 4. intros Γ t T.
-  move aux at top.
-  destruct 1; match goal with
-              | |- P _ (tFix _ _) (tFix _ _) => idtac
-              | |- P _ (tCoFix _ _) (tCoFix _ _) => idtac
-              | |- P _ (mkApps (tFix _ _) _) _ => idtac
-              | |- P _ (tCase _ _ (mkApps (tCoFix _ _) _) _) _ => idtac
-              | |- P _ (tProj _ (mkApps (tCoFix _ _) _)) _ => idtac
-              | H : _ |- _ => eapply H; eauto
-              end.
-
-  - revert params' o.
-    generalize (pparams p).
-    fix auxl 3.
-    intros params params' [].
-    + constructor. split; auto.
-    + constructor. auto.
+  | congr1_case_return ci p preturn' c brs :
+    congr1 R Σ (Γ ,,, inst_case_predicate_context p) p.(preturn) preturn' ->
+    congr1 R Σ Γ (tCase ci p c brs)
+            (tCase ci (set_preturn p preturn') c brs)
       
-  - revert brs' o.
-    revert brs.
-    fix auxl 3.
-    intros l l' Hl. destruct Hl.
-    + simpl in *. constructor; intros; intuition auto.
-    + constructor. eapply auxl. apply Hl.
+  | congr1_case_discr ci p c c' brs :
+    congr1 R Σ Γ c c' -> 
+    congr1 R Σ Γ (tCase ci p c brs) (tCase ci p c' brs)
 
-  - revert l l' o.
-    fix auxl 3.
-    intros l l' Hl. destruct Hl.
-    + constructor. split; auto.
-    + constructor. auto.
+  | congr1_case_brs ci p c brs brs' :    
+      OnOne2 (fun br br' =>
+        on_Trel_eq (congr1 R Σ (Γ ,,, inst_case_branch_context p br)) bbody bcontext br br')
+        brs brs' ->
+      congr1 R Σ Γ (tCase ci p c brs) (tCase ci p c brs')
 
-  - eapply X15.
-    revert mfix mfix' o; fix auxl 3.
-    intros l l' Hl; destruct Hl;
-    constructor; try split; auto; intuition.
+  | congr1_proj p c c' : congr1 R Σ Γ c c' -> congr1 R Σ Γ (tProj p c) (tProj p c')
 
-  - eapply X16.
-    revert o. generalize (fix_context mfix). intros c Xnew.
-    revert mfix mfix' Xnew; fix auxl 3; intros l l' Hl;
-    destruct Hl; constructor; try split; auto; intuition.
+  | congr1_app_fun t t' u : congr1 R Σ Γ t t' -> congr1 R Σ Γ (tApp t u) (tApp t' u)
+  | congr1_app_arg t u u' : congr1 R Σ Γ u u' -> congr1 R Σ Γ (tApp t u) (tApp t u')
 
-  - eapply X17.
-    revert mfix mfix' o.
-    fix auxl 3; intros l l' Hl; destruct Hl;
+  | congr1_prod_dom na A A' B : congr1 R Σ Γ A A' -> congr1 R Σ Γ (tProd na A B) (tProd na A' B)
+  | congr1_prod_cod na A B B' : congr1 R Σ (Γ ,, vass na A) B B' ->
+                                congr1 R Σ Γ (tProd na A B) (tProd na A B')
+
+  | congr1_evar ev l l' : OnOne2 (congr1 R Σ Γ) l l' -> congr1 R Σ Γ (tEvar ev l) (tEvar ev l')
+
+  | congr1_fix_ty mfix mfix' idx :
+      OnOne2 (on_Trel_eq (congr1 R Σ Γ) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
+      congr1 R Σ Γ (tFix mfix idx) (tFix mfix' idx)
+
+  | congr1_fix_body mfix mfix' idx :
+      OnOne2 (on_Trel_eq (congr1 R Σ (Γ ,,, fix_context mfix)) dbody (fun x => (dname x, dtype x, rarg x)))
+            mfix mfix' ->
+      congr1 R Σ Γ (tFix mfix idx) (tFix mfix' idx)
+
+  | congr1_cofix_ty mfix mfix' idx :
+      OnOne2 (on_Trel_eq (congr1 R Σ Γ) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
+      congr1 R Σ Γ (tCoFix mfix idx) (tCoFix mfix' idx)
+
+  | congr1_cofix_body mfix mfix' idx :
+      OnOne2 (on_Trel_eq (congr1 R Σ (Γ ,,, fix_context mfix)) dbody (fun x => (dname x, dtype x, rarg x)))
+            mfix mfix' ->
+      congr1 R Σ Γ (tCoFix mfix idx) (tCoFix mfix' idx)
+
+  (* the generic constructor at the end so that congruences are preferred by the constructor tactic*)
+  | congr1_base t t' : R Σ Γ t t' -> congr1 R Σ Γ t t'.
+
+
+
+  Lemma congr1_ind_all :
+    forall R (Σ : global_env) (P : context -> term -> term -> Type),
+
+      (forall (Γ : context) (t t' : term),
+        R Σ Γ t t' -> P Γ t t') ->
+
+      (forall (Γ : context) (na : aname) (A A' t : term),
+      congr1 R Σ Γ A A' -> P Γ A A' -> P Γ (tLambda na A t) (tLambda na A' t)) ->
+
+      (forall (Γ : context) (na : aname) (A t t' : term),
+      congr1 R Σ (Γ,, vass na A) t t' -> P (Γ,, vass na A) t t' -> P Γ (tLambda na A t) (tLambda na A t')) ->
+
+      (forall (Γ : context) (na : aname) (b b' A t : term),
+      congr1 R Σ Γ b b' -> P Γ b b' -> P Γ (tLetIn na b A t) (tLetIn na b' A t)) ->
+
+      (forall (Γ : context) (na : aname) (b A A' t : term),
+      congr1 R Σ Γ A A' -> P Γ A A' -> P Γ (tLetIn na b A t) (tLetIn na b A' t)) ->
+
+      (forall (Γ : context) (na : aname) (b A t t' : term),
+      congr1 R Σ (Γ,, vdef na b A) t t' -> P (Γ,, vdef na b A) t t' ->
+      P Γ (tLetIn na b A t) (tLetIn na b A t')) ->
+
+      (forall (Γ : context) (ci : case_info) p params' c brs,
+        OnOne2 (Trel_conj (congr1 R Σ Γ) (P Γ)) p.(pparams) params' ->
+          P Γ (tCase ci p c brs)
+              (tCase ci (set_pparams p params') c brs)) ->
+              
+      (forall (Γ : context) (ci : case_info) p preturn' c brs,
+        congr1 R Σ (Γ ,,, inst_case_predicate_context p) p.(preturn) preturn' ->
+        P (Γ ,,, inst_case_predicate_context p) p.(preturn) preturn' ->
+        P Γ (tCase ci p c brs)
+            (tCase ci (set_preturn p preturn') c brs)) ->
+      
+      (forall (Γ : context) (ind : case_info) (p : predicate term) (c c' : term) (brs : list (branch term)),
+      congr1 R Σ Γ c c' -> P Γ c c' -> P Γ (tCase ind p c brs) (tCase ind p c' brs)) ->
+
+      (forall (Γ : context) ci p c brs brs',
+        OnOne2 (fun br br' =>
+        (on_Trel_eq (Trel_conj (congr1 R Σ (Γ ,,, inst_case_branch_context p br)) 
+          (P (Γ ,,, inst_case_branch_context p br)))
+          bbody bcontext br br')) brs brs' ->
+        P Γ (tCase ci p c brs) (tCase ci p c brs')) ->
+
+      (forall (Γ : context) (p : projection) (c c' : term), congr1 R Σ Γ c c' -> P Γ c c' ->
+                                                            P Γ (tProj p c) (tProj p c')) ->
+
+      (forall (Γ : context) (M1 N1 : term) (M2 : term), congr1 R Σ Γ M1 N1 -> P Γ M1 N1 ->
+                                                        P Γ (tApp M1 M2) (tApp N1 M2)) ->
+
+      (forall (Γ : context) (M2 N2 : term) (M1 : term), congr1 R Σ Γ M2 N2 -> P Γ M2 N2 ->
+                                                        P Γ (tApp M1 M2) (tApp M1 N2)) ->
+
+      (forall (Γ : context) (na : aname) (M1 M2 N1 : term),
+      congr1 R Σ Γ M1 N1 -> P Γ M1 N1 -> P Γ (tProd na M1 M2) (tProd na N1 M2)) ->
+
+      (forall (Γ : context) (na : aname) (M2 N2 M1 : term),
+      congr1 R Σ (Γ,, vass na M1) M2 N2 -> P (Γ,, vass na M1) M2 N2 -> P Γ (tProd na M1 M2) (tProd na M1 N2)) ->
+
+      (forall (Γ : context) (ev : nat) (l l' : list term),
+          OnOne2 (Trel_conj (congr1 R Σ Γ) (P Γ)) l l' -> P Γ (tEvar ev l) (tEvar ev l')) ->
+
+      (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
+      OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ Γ) (P Γ)) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
+      P Γ (tFix mfix idx) (tFix mfix' idx)) ->
+
+      (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
+      OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ (Γ ,,, fix_context mfix))
+                                    (P (Γ ,,, fix_context mfix))) dbody
+                          (fun x => (dname x, dtype x, rarg x))) mfix mfix' ->
+      P Γ (tFix mfix idx) (tFix mfix' idx)) ->
+
+      (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
+      OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ Γ) (P Γ)) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
+      P Γ (tCoFix mfix idx) (tCoFix mfix' idx)) ->
+
+      (forall (Γ : context) (mfix mfix' : list (def term)) (idx : nat),
+      OnOne2 (on_Trel_eq (Trel_conj (congr1 R Σ (Γ ,,, fix_context mfix))
+                                    (P (Γ ,,, fix_context mfix))) dbody
+                          (fun x => (dname x, dtype x, rarg x))) mfix mfix' ->
+      P Γ (tCoFix mfix idx) (tCoFix mfix' idx)) ->
+
+      forall (Γ : context) (t t' : term), congr1 R Σ Γ t t' -> P Γ t t'.
+  Proof.
+    intros. rename X19 into Xlast. revert Γ t t' Xlast.
+    fix aux 4. intros Γ t T.
+    move aux at top.
+    destruct 1; match goal with
+                | |- P _ (tFix _ _) (tFix _ _) => idtac
+                | |- P _ (tCoFix _ _) (tCoFix _ _) => idtac
+                | |- P _ (mkApps (tFix _ _) _) _ => idtac
+                | |- P _ (tCase _ _ (mkApps (tCoFix _ _) _) _) _ => idtac
+                | |- P _ (tProj _ (mkApps (tCoFix _ _) _)) _ => idtac
+                | H : _ |- _ => eapply H; eauto
+                end.
+
+    - revert params' o.
+      generalize (pparams p).
+      fix auxl 3.
+      intros params params' [].
+      + constructor. split; auto.
+      + constructor. auto.
+        
+    - revert brs' o.
+      revert brs.
+      fix auxl 3.
+      intros l l' Hl. destruct Hl.
+      + simpl in *. constructor; intros; intuition auto.
+      + constructor. eapply auxl. apply Hl.
+
+    - revert l l' o.
+      fix auxl 3.
+      intros l l' Hl. destruct Hl.
+      + constructor. split; auto.
+      + constructor. auto.
+
+    - eapply X15.
+      revert mfix mfix' o; fix auxl 3.
+      intros l l' Hl; destruct Hl;
       constructor; try split; auto; intuition.
 
-  - eapply X18.
-    revert o. generalize (fix_context mfix). intros c new.
-    revert mfix mfix' new; fix auxl 3; intros l l' Hl; destruct Hl;
-      constructor; try split; auto; intuition.
-Defined.
+    - eapply X16.
+      revert o. generalize (fix_context mfix). intros c Xnew.
+      revert mfix mfix' Xnew; fix auxl 3; intros l l' Hl;
+      destruct Hl; constructor; try split; auto; intuition.
 
-Hint Constructors congr1 : pcuic.
+    - eapply X17.
+      revert mfix mfix' o.
+      fix auxl 3; intros l l' Hl; destruct Hl;
+        constructor; try split; auto; intuition.
+
+    - eapply X18.
+      revert o. generalize (fix_context mfix). intros c new.
+      revert mfix mfix' new; fix auxl 3; intros l l' Hl; destruct Hl;
+        constructor; try split; auto; intuition.
+  Defined.
+
+  Hint Constructors congr1 : pcuic.
 
 
-Theorem congr1_invol R Σ Γ t t' : congr1 (congr1 R) Σ Γ t t' <~> congr1 R Σ Γ t t'.
-Proof.
-  split.
-  2: by constructor.
-  intros c.
-  induction c using congr1_ind_all.
-  1: assumption.
-  1-16,18: constructor ; auto.
+  Theorem congr1_invol R Σ Γ t t' : congr1 (congr1 R) Σ Γ t t' <~> congr1 R Σ Γ t t'.
+  Proof.
+    split.
+    2: by constructor.
+    intros c.
+    induction c using congr1_ind_all.
+    1: assumption.
+    1-16,18: constructor ; auto.
 
-  - induction X as [? ? ? [] | ].
-    all: by constructor.
+    - induction X as [? ? ? [] | ].
+      all: by constructor.
+      
+    - induction X as [? ? ? [[] ?] |].
+      + constructor.
+        split ; auto.
+      + by constructor.
+      
+    - induction X as [? ? ? []|].
+      all: by constructor.
+
+    - induction X as [? ? ? [[] ]|].
+      + constructor.
+        split ; auto.
+      + by constructor.
+      
+    - induction X as [? ? ? [[] ]|].
+      + constructor.
+        split ; auto.
+      + by constructor.
+
+    - apply congr1_fix_body.
+      revert X.
+      generalize (fix_context mfix).
+      induction 1 as [? ? ? [[] ]|].
+      + constructor.
+        split ; auto.
+      + by constructor.
+
+    - apply congr1_cofix_body.
+      revert X.
+      generalize (fix_context mfix).
+      induction 1 as [? ? ? [[] ]|].
+      + constructor.
+        split ; auto.
+      + by constructor.
+  Qed.
+
+
+  Theorem congr1_zip R Σ Γ t t' : congr1 R Σ Γ t t' ->
+    ∑ π u u', t = zipc u π × t' = zipc u' π × R Σ (Γ,,, stack_context π) u u'.
+  Proof.
+    induction 1 using congr1_ind_all.
+
+    - exists [], t, t' ; cbn ; by repeat split.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[Lambda_ty _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[Lambda_bd _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_assoc.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[LetIn_bd _ _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+      
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[LetIn_ty _ _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[LetIn_in _ _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_assoc.
+      
+    - destruct p ; cbn in *.
+      rewrite /set_pparams /=.
+      apply OnOne2_split in X as (p&p'&p1&p2&(?&(π&u&u'&?&?&?))&?&?).
+      subst.
+      eexists (π++[Case_pred _ (pred_hole_params _ _ _ _ _) _ _]),u,u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[Case_pred _ (pred_hole_return _ _ _) _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      1: by destruct p ; cbn in * ; subst.
+      by rewrite app_nil_r app_context_assoc.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[Case_discr _ _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+
+    - apply OnOne2_split in X as (br&br'&br1&br2&((?&(π&u&u'&?&?&?))&?)&?&?).
+      destruct br, br' ; cbn -[inst_case_context] in *.
+      subst.
+      eexists (π++[Case_branch _ _ _ ((_ , branch_hole_body _), _)]),u,u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_nil_r app_context_assoc.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[Proj _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[App_l _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+      
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[App_r _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[Prod_l _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_nil_l.
+
+    - destruct IHX as (π & u & u' & ? & ? & ?).
+      subst.
+      eexists (π++[Prod_r _ _ ]), u, u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_assoc.
+
+    - admit.
+      (*missing stack for evar*)
+      
+    - apply OnOne2_split in X as ([]&[]&l1&l2&((?&π&u&u'&?&?&?)&eq)&?&?).
+      cbn in * ; subst.
+      inversion_clear eq.
+      eexists (π++[Fix ((_,(def_hole_type _ _ _)),_) _]),u,u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_assoc.
+
+    - apply OnOne2_split in X as ([]&[]&l1&l2&((?&π&u&u'&?&?&?)&eq)&?&?).
+      cbn -[fix_context] in * ; subst.
+      inversion eq ; subst ; clear eq.
+      eexists (π++[Fix ((_,(def_hole_body _ _ _)),_) _]),u,u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn -[fix_context].
+      rewrite app_context_assoc app_nil_r.
+      by rewrite fix_context_fix_context_alt map_app /= in r.
+
+    - apply OnOne2_split in X as ([]&[]&l1&l2&((?&π&u&u'&?&?&?)&eq)&?&?).
+      cbn in * ; subst.
+      inversion_clear eq.
+      eexists (π++[CoFix ((_,(def_hole_type _ _ _)),_) _]),u,u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn.
+      by rewrite app_context_assoc.
+
+    - apply OnOne2_split in X as ([]&[]&l1&l2&((?&π&u&u'&?&?&?)&eq)&?&?).
+      cbn -[fix_context] in * ; subst.
+      inversion eq ; subst ; clear eq.
+      eexists (π++[CoFix ((_,(def_hole_body _ _ _)),_) _]),u,u'.
+      rewrite !zipc_stack_cat stack_context_stack_cat.
+      repeat split ; cbn -[fix_context].
+      rewrite app_context_assoc app_nil_r.
+      by rewrite fix_context_fix_context_alt map_app /= in r.
+  Admitted. 
+      
+  Theorem zip_congr1 R Σ Γ u u' π : 
+    R Σ (Γ ,,, stack_context π) u u' ->
+    congr1 R Σ Γ (zipc u π) (zipc u' π).
+  Proof.
+    intros h.
+    induction π in Γ, h |- * using list_rect_rev.
+    1: by constructor.
+    destruct a.
+
+    all: try solve [
+      rewrite 2!zipc_stack_cat ; cbn ;
+      rewrite stack_context_stack_cat in h ; cbn in h ;
+      rewrite ?app_context_nil_l ?app_context_assoc in h ;
+      econstructor ; eapply IHπ ; eassumption
+    ].
+
+    - destruct mfix as ((?&[])&?).
+      + rewrite 2!zipc_stack_cat. cbn.
+        rewrite stack_context_stack_cat in h. cbn in h.
+        rewrite app_context_nil_l in h.
+        eapply congr1_fix_ty. eapply OnOne2_app. constructor. cbn.
+        intuition auto.
+      + rewrite 2!zipc_stack_cat. cbn.
+        rewrite stack_context_stack_cat in h. cbn in h.
+        rewrite app_nil_r in h.
+        eapply congr1_fix_body. eapply OnOne2_app. constructor. cbn.
+        intuition auto.
+        eapply IHπ.
+        rewrite fix_context_fix_context_alt.
+        rewrite map_app. cbn. unfold def_sig at 2. cbn.
+        rewrite app_context_assoc in h.
+        assumption.
     
-  - induction X as [? ? ? [[] ?] |].
-    + constructor.
-      split ; auto.
-    + by constructor.
+    - destruct mfix as ((?&[])&?).
+      + rewrite 2!zipc_stack_cat. cbn.
+        rewrite stack_context_stack_cat in h. cbn in h.
+        rewrite app_context_nil_l in h.
+        eapply congr1_cofix_ty. eapply OnOne2_app. constructor. cbn.
+        intuition auto.
+      + rewrite 2!zipc_stack_cat. cbn.
+        rewrite stack_context_stack_cat in h. cbn in h.
+        rewrite app_nil_r in h.
+        eapply congr1_cofix_body. eapply OnOne2_app. constructor. cbn.
+        intuition auto.
+        eapply IHπ.
+        rewrite fix_context_fix_context_alt.
+        rewrite map_app. cbn. unfold def_sig at 2. cbn.
+        rewrite app_context_assoc in h.
+        assumption.
+
+    - destruct p.
+      + rewrite 2!zipc_stack_cat. cbn.
+        rewrite stack_context_stack_cat in h. cbn in h.
+        rewrite app_context_nil_l in h.
+        constructor.
+        eapply OnOne2_app. constructor. cbn.
+        intuition auto.
+      + rewrite 2!zipc_stack_cat. cbn.
+        rewrite stack_context_stack_cat in h. cbn in h.
+        rewrite app_nil_r app_context_assoc in h.
+        constructor.
+        intuition auto.
     
-  - induction X as [? ? ? []|].
-    all: by constructor.
-
-  - induction X as [? ? ? [[] ]|].
-    + constructor.
-      split ; auto.
-    + by constructor.
-    
-  - induction X as [? ? ? [[] ]|].
-    + constructor.
-      split ; auto.
-    + by constructor.
-
-  - apply congr1_fix_body.
-    revert X.
-    generalize (fix_context mfix).
-    induction 1 as [? ? ? [[] ]|].
-    + constructor.
-      split ; auto.
-    + by constructor.
-
-  - apply congr1_cofix_body.
-    revert X.
-    generalize (fix_context mfix).
-    induction 1 as [? ? ? [[] ]|].
-    + constructor.
-      split ; auto.
-    + by constructor.
-Qed.
-
-(*TODO move*)
-Lemma OnOne2_decomp A (P : A -> A -> Type) l l' : OnOne2 P l l' ->
-  ∑ l1 a a' l2, l = l1 ++ (a :: l2) × l' = l1 ++ (a' :: l2) × P a a'.
-Proof.
-  induction 1.
-  - exists [],hd,hd',tl.
-    by repeat split.
-  - destruct IHX as (l1&a&a'&l2&?&?&?).
-    subst.
-    exists (hd::l1),a,a',l2.
-    by repeat split.
-Qed.  
-
-Theorem congr1_zip R Σ Γ t t' : congr1 R Σ Γ t t' ->
-  ∑ π u u', t = zipc u π × t' = zipc u' π × R Σ (Γ,,, stack_context π) u u'.
-Proof.
-  induction 1 using congr1_ind_all.
-
-  - exists [], t, t' ; cbn ; by repeat split.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[Lambda_ty _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[Lambda_bd _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_assoc.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[LetIn_bd _ _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-    
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[LetIn_ty _ _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[LetIn_in _ _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_assoc.
-    
-  - destruct p ; cbn in *.
-    rewrite /set_pparams /=.
-    apply OnOne2_decomp in X as (p1&p&p'&p2&?&?&?&π&u&u'&?&?&?).
-    subst.
-    eexists (π++[Case_pred _ (pred_hole_params _ _ _ _ _) _ _]),u,u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[Case_pred _ (pred_hole_return _ _ _) _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    1: by destruct p ; cbn in * ; subst.
-    by rewrite app_nil_r app_context_assoc.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[Case_discr _ _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-
-  - apply OnOne2_decomp in X as (br1&br&br'&br2&?&?&(?&π&u&u'&?&?&?)&?).
-    destruct br, br' ; cbn -[inst_case_context] in *.
-    subst.
-    eexists (π++[Case_branch _ _ _ ((_ , branch_hole_body _), _)]),u,u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_nil_r app_context_assoc.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[Proj _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[App_l _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-    
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[App_r _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[Prod_l _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_nil_l.
-
-  - destruct IHX as (π & u & u' & ? & ? & ?).
-    subst.
-    eexists (π++[Prod_r _ _ ]), u, u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_assoc.
-
-  - admit.
-    (*missing stack for evar*)
-    
-  - apply OnOne2_decomp in X as (l1&[]&[]&l2&?&?&(?&π&u&u'&?&?&?)&eq).
-    cbn in * ; subst.
-    inversion_clear eq.
-    eexists (π++[Fix ((_,(def_hole_type _ _ _)),_) _]),u,u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_assoc.
-
-  - apply OnOne2_decomp in X as (l1&[]&[]&l2&?&?&(?&π&u&u'&?&?&?)&eq).
-    cbn -[fix_context] in * ; subst.
-    inversion eq ; subst ; clear eq.
-    eexists (π++[Fix ((_,(def_hole_body _ _ _)),_) _]),u,u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn -[fix_context].
-    rewrite app_context_assoc app_nil_r.
-    by rewrite fix_context_fix_context_alt map_app /= in r.
-
-  - apply OnOne2_decomp in X as (l1&[]&[]&l2&?&?&(?&π&u&u'&?&?&?)&eq).
-    cbn in * ; subst.
-    inversion_clear eq.
-    eexists (π++[CoFix ((_,(def_hole_type _ _ _)),_) _]),u,u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn.
-    by rewrite app_context_assoc.
-
-  - apply OnOne2_decomp in X as (l1&[]&[]&l2&?&?&(?&π&u&u'&?&?&?)&eq).
-    cbn -[fix_context] in * ; subst.
-    inversion eq ; subst ; clear eq.
-    eexists (π++[CoFix ((_,(def_hole_body _ _ _)),_) _]),u,u'.
-    rewrite !zipc_stack_cat stack_context_stack_cat.
-    repeat split ; cbn -[fix_context].
-    rewrite app_context_assoc app_nil_r.
-    by rewrite fix_context_fix_context_alt map_app /= in r.
-Admitted. 
-    
-Theorem zip_congr1 R Σ Γ u u' π : 
-  R Σ (Γ ,,, stack_context π) u u' ->
-  congr1 R Σ Γ (zipc u π) (zipc u' π).
-Proof.
-  intros h.
-  induction π in Γ, h |- * using list_rect_rev.
-  1: by constructor.
-  destruct a.
-
-  all: try solve [
-    rewrite 2!zipc_stack_cat ; cbn ;
-    rewrite stack_context_stack_cat in h ; cbn in h ;
-    rewrite ?app_context_nil_l ?app_context_assoc in h ;
-    econstructor ; eapply IHπ ; eassumption
-  ].
-
-  - destruct mfix as ((?&[])&?).
-    + rewrite 2!zipc_stack_cat. cbn.
-      rewrite stack_context_stack_cat in h. cbn in h.
-      rewrite app_context_nil_l in h.
-      eapply congr1_fix_ty. eapply OnOne2_app. constructor. cbn.
-      intuition auto.
-    + rewrite 2!zipc_stack_cat. cbn.
-      rewrite stack_context_stack_cat in h. cbn in h.
-      rewrite app_nil_r in h.
-      eapply congr1_fix_body. eapply OnOne2_app. constructor. cbn.
-      intuition auto.
-      eapply IHπ.
-      rewrite fix_context_fix_context_alt.
-      rewrite map_app. cbn. unfold def_sig at 2. cbn.
-      rewrite app_context_assoc in h.
-      assumption.
-  
-  - destruct mfix as ((?&[])&?).
-    + rewrite 2!zipc_stack_cat. cbn.
-      rewrite stack_context_stack_cat in h. cbn in h.
-      rewrite app_context_nil_l in h.
-      eapply congr1_cofix_ty. eapply OnOne2_app. constructor. cbn.
-      intuition auto.
-    + rewrite 2!zipc_stack_cat. cbn.
-      rewrite stack_context_stack_cat in h. cbn in h.
-      rewrite app_nil_r in h.
-      eapply congr1_cofix_body. eapply OnOne2_app. constructor. cbn.
-      intuition auto.
-      eapply IHπ.
-      rewrite fix_context_fix_context_alt.
-      rewrite map_app. cbn. unfold def_sig at 2. cbn.
-      rewrite app_context_assoc in h.
-      assumption.
-
-  - destruct p.
-    + rewrite 2!zipc_stack_cat. cbn.
-      rewrite stack_context_stack_cat in h. cbn in h.
-      rewrite app_context_nil_l in h.
-      constructor.
-      eapply OnOne2_app. constructor. cbn.
-      intuition auto.
-    + rewrite 2!zipc_stack_cat. cbn.
+    - destruct brs as ((?&[])&?).
+      rewrite 2!zipc_stack_cat. cbn.
       rewrite stack_context_stack_cat in h. cbn in h.
       rewrite app_nil_r app_context_assoc in h.
       constructor.
+      eapply OnOne2_app. constructor.
       intuition auto.
-  
-  - destruct brs as ((?&[])&?).
-    rewrite 2!zipc_stack_cat. cbn.
-    rewrite stack_context_stack_cat in h. cbn in h.
-    rewrite app_nil_r app_context_assoc in h.
-    constructor.
-    eapply OnOne2_app. constructor.
-    intuition auto.
-Qed.
-  
-Corollary zip_congr1_congr R Σ Γ u u' π : 
-  congr1 R Σ (Γ ,,, stack_context π) u u' ->
-  congr1 R Σ Γ (zipc u π) (zipc u' π).
-Proof.
-  intros.
-  by apply congr1_invol, zip_congr1.
-Qed.
-
-(** Generic method to show that a relation is closed by congruence using
-    a notion of one-hole context. *)
-
-
-Section ReductionCongruence.
-  Context {Σ : global_env}.
-
-  
-  Inductive contextual_closure (red : forall Γ, term -> term -> Type) : context -> term -> term -> Type@{wf_context_i} :=
-  | ctxclos_atom Γ t : atom t -> contextual_closure red Γ t t
-  | ctxclos_ctx Γ (ctx : term_context) (u u' : term) :
-      red (hole_context ctx Γ) u u' -> contextual_closure red Γ (fill_context u ctx) (fill_context u' ctx).
-
-  Lemma red_contextual_closure Γ t u : red Σ Γ t u -> contextual_closure (red Σ) Γ t u.
-  Proof.
-    intros Hred.
-    apply (ctxclos_ctx (red Σ) Γ tCtxHole t u Hred).
   Qed.
-
-  Argum.ents fill_list_context : simpl never.
-
-  (* Lemma wf_branch_context_branches p ctors x b : 
-    wf_branch_context p ctors b ->
-    Forall2 wf_branch ctors (fill_branch_context x b).
-  Proof.
-    induction ctors in b |- *; destruct b; simpl; auto;
-     destruct p as [[[? ?] ?] ?].
-    - destruct p0 as [[? ?] ?].
-      simpl. intros [[[[] ?] ?] ?].
-      constructor; auto.
-    - intros []. constructor; auto.
-  Qed. *)
-
-  Lemma contextual_closure_red Γ t u : 
-    contextual_closure (red Σ) Γ t u -> red Σ Γ t u.
-  Proof.
-    induction 1; trea.
-    apply clos_rt_rt1n in r. induction r; trea.
-    apply clos_rt_rt1n_iff in r0.
-    etransitivity; tea. constructor.
-    clear -r.
-    set (P := fun ctx t => 
-      forall Γ y, red1 Σ (hole_context ctx Γ) x y ->
-                  red1 Σ Γ t (fill_context y ctx)).
-    set (P' := fun l fill_l =>
-      forall Γ y,
-                   red1 Σ (hole_list_context l Γ) x y ->
-                   OnOne2 (red1 Σ Γ) fill_l (fill_list_context y l)).
-    set (P'' := fun l fill_l =>
-       forall p Γ y,
-       red1 Σ (hole_branch_context p l Γ) x y ->
-       OnOne2 (fun br br' => 
-          let brctx := inst_case_branch_context p br in
-          on_Trel_eq (red1 Σ (Γ ,,, brctx)) bbody bcontext br br')
-          fill_l (fill_branch_context y l)).
-    (* set (Pfix := fun l fixc fill_l => *)
-    (*              forall Γ y, *)
-    (*                red1 Σ (hole_mfix_context l fixc Γ) x y -> *)
-    (*                (OnOne2 (on_Trel_eq (red1 (fst Σ) Γ) dtype (fun d => (dname d, dbody d, rarg d))) *)
-    (*                       fill_l (fill_mfix_context y l fixc)) + *)
-    (*                (OnOne2 (on_Trel_eq (red1 (fst Σ) (Γ ,,, fix_context fill_l)) dbody (fun d => (dname d, dtype d, rarg d))) *)
-    (*                       fill_l (fill_mfix_context y l fixc))). *)
-    revert Γ y r.
-    eapply (fill_context_elim x P P' P''); subst P P' P''; cbv beta;
-      intros **; simp fill_context; cbn in *; auto; try solve [constructor; eauto].
-  Qed.
-
-  Theorem red_contextual_closure_equiv Γ t u : red Σ Γ t u <~> contextual_closure (red Σ) Γ t u.
-  Proof.
-    split.
-    - apply red_contextual_closure.
-    - apply contextual_closure_red.
-  Qed.
-
-  Lemma red_ctx_congr {Γ} {M M'} ctx :
-    red Σ (hole_context ctx Γ) M M' ->
-    red Σ Γ (fill_context M ctx) (fill_context M' ctx).
+    
+  Corollary zip_congr1_congr R Σ Γ u u' π : 
+    congr1 R Σ (Γ ,,, stack_context π) u u' ->
+    congr1 R Σ Γ (zipc u π) (zipc u' π).
   Proof.
     intros.
-    apply red_contextual_closure_equiv.
-    now apply (ctxclos_ctx _ _ ctx).
+    by apply congr1_invol, zip_congr1.
   Qed.
 
-  Section Congruences.
+  Lemma OnOne2_prod_inv_refl_r :
+  forall A (P Q : A -> A -> Type) l l',
+    (forall x, Q x x) ->
+    OnOne2 (Trel_conj P Q) l l' ->
+    OnOne2 P l l' × All2 Q l l'.
+  Proof.
+  intros A P Q l l' hQ h.
+  induction h.
+  - destruct p. split.
+    + constructor. assumption.
+    + constructor.
+      * assumption.
+      * eapply All_All2.
+        -- instantiate (1 := fun x => True). eapply Forall_All.
+          eapply Forall_True. intro. auto.
+        -- intros x _. eapply hQ.
+  - destruct IHh. split.
+    + constructor. assumption.
+    + constructor ; eauto.
+  Qed.
 
-    Notation red1_one_term Γ :=
+  Lemma congr1_refl Σ R :
+    (forall Γ, Reflexive (R Σ Γ)) ->
+    forall Γ, Reflexive (congr1 R Σ Γ).
+  Proof.
+    intros r Γ.
+    intro x.
+    constructor.
+    reflexivity.
+  Qed.
+
+  Lemma mapi_eq {A A' B} (f : nat -> A -> B) (g : nat -> A' -> B) l l' :
+    All2 (fun a a' => forall i, (f i a) = (g i a')) l l' ->
+    mapi f l = mapi g l'.
+  Proof.
+    intros a.
+    rewrite /mapi.
+    generalize 0.
+    induction a.
+    - reflexivity.
+    - cbn.
+      intros.
+      by f_equal.
+  Qed.
+
+  Lemma fix_context_eq mfix mfix':
+    All2 (fun d d' => (dname d, dtype d) = (dname d',dtype d')) mfix mfix' ->
+    fix_context mfix = fix_context mfix'.
+  Proof.
+    intros.
+    rewrite !/fix_context.
+    f_equal.
+    apply mapi_eq.
+    eapply All2_impl ; tea.
+    intros.
+    inversion H.
+    destruct x,y ; cbn in *.
+    by subst.
+  Qed.
+
+  (* Lemma congr1_sym Σ R :
+    (forall Γ, Symmetric (R Σ Γ)) ->
+    forall Γ, Symmetric (congr1 R Σ Γ).
+  Proof.
+    intros sym Γ x y c.
+    induction c using congr1_ind_all.
+    1: by constructor ; symmetry.
+    all: try solve [constructor ; auto].
+    
+    - replace p with (set_pparams (set_pparams p params') (pparams p)) by (by destruct p).
+      constructor.
+      rewrite /pparams /= -/(pparams p).
+      eapply OnOne2_impl.
+      1: eapply OnOne2_sym ; exact X.
+      by intros ? ? [].
+
+    - replace p with (set_preturn (set_preturn p preturn') (preturn p)) by (by destruct p).
+      by constructor.
+
+    - constructor.
+      eapply OnOne2_impl.
+      1: eapply OnOne2_sym ; exact X.
+      intros ? ? [[] ?].
+      split ; auto.
+      replace (inst_case_branch_context p x) with (inst_case_branch_context p y).
+      1: assumption.
+      destruct x, y ; cbn in *.
+      by subst.
+
+    - constructor.
+      eapply OnOne2_impl.
+      1: eapply OnOne2_sym ; exact X.
+      by intros ? ? [].
+
+    - constructor.
+      eapply OnOne2_impl.
+      1: eapply OnOne2_sym ; exact X.
+      intros ? ? [[] ?].
+      intuition auto.
+
+    - apply congr1_fix_body.
+      eapply OnOne2_impl.
+      1: eapply OnOne2_sym ; exact X.
+      intros ? ? [[] ?].
+      replace (fix_context mfix') with (fix_context mfix).
+      1: intuition auto.
+      apply OnOne2_prod_inv_refl_r in X as [] ; auto.
+      rewrite /fix_context.
+      f_equal.
+      apply mapi_eq.
+      eapply All2_impl.
+      1: eassumption.
+      intros ? ? eq i.
+      cbn in *.
+      inversion eq.
+      by repeat f_equal.
+
+    - constructor.
+      eapply OnOne2_impl.
+      1: eapply OnOne2_sym ; exact X.
+      intros ? ? [[] ?].
+      intuition auto.
+
+    - apply congr1_cofix_body.
+      eapply OnOne2_impl.
+      1: eapply OnOne2_sym ; exact X.
+      intros ? ? [[] ?].
+      replace (fix_context mfix') with (fix_context mfix).
+      1: intuition auto.
+      apply OnOne2_prod_inv_refl_r in X as [] ; auto.
+      rewrite /fix_context.
+      f_equal.
+      apply mapi_eq.
+      eapply All2_impl.
+      1: eassumption.
+      intros ? ? eq i.
+      cbn in *.
+      inversion eq.
+      by repeat f_equal.
+    
+  Qed. *)
+
+
+  Theorem congr1_clos_refl_trans R Σ Γ t u :
+    congr1 (fun Σ' Γ' => (clos_refl_trans (congr1 R Σ' Γ'))) Σ Γ t u ->
+    clos_refl_trans (congr1 R Σ Γ) t u.
+  Proof.
+    intros r.
+    apply clos_rtn1_rt.
+    induction r using congr1_ind_all.
+
+    all : try solve [
+      clear r ; induction IHr ; econstructor ; eauto ; constructor ; auto
+    ].
+
+    + by apply clos_rt_rtn1.
+
+    + apply OnOne2_split in X as (?&?&?&?&(_&IH)&?&?).
+      destruct p ; cbn in *.
+      rewrite /set_pparams /=.
+      subst.
+      induction IH.
+      all: econstructor ; eauto.
+      constructor.
+      apply OnOne2_app.
+      by constructor.
+
+    + clear r.
+      destruct p ; cbn -[inst_case_predicate_context] in *.
+      rewrite /set_preturn /=.
+      induction IHr.
+      all: econstructor ; eauto.
+      by constructor.
+
+    + apply OnOne2_split in X as (?&?&?&?&((_&IH)&?)&?&?).
+      destruct x, x0 ; cbn -[inst_case_branch_context] in *.
+      subst.
+      induction IH.
+      all: econstructor ; eauto.
+      constructor.
+      apply OnOne2_app.
+      by constructor.
+
+    + apply OnOne2_split in X as (?&?&?&?&(_&IH)&?&?).
+      subst.
+      induction IH.
+      all: econstructor ; eauto.
+      constructor.
+      apply OnOne2_app.
+      by constructor.
+
+    + apply OnOne2_split in X as (?&?&?&?&((_&IH)&?)&?&?).
+      inversion e ; clear e.
+      destruct x,x0 ; cbn in *.
+      subst.
+      induction IH.
+      all: econstructor ; eauto.
+      constructor.
+      apply OnOne2_app.
+      by constructor.
+
+    + apply OnOne2_split in X as (?&?&?&?&((_&IH)&?)&?&?).
+      inversion e ; clear e.
+      destruct x,x0 ; cbn in *.
+      subst.
+      induction IH.
+      all: econstructor ; eauto.
+      apply congr1_fix_body.
+      apply OnOne2_app.
+      constructor ; cbn.
+      split.
+      2: reflexivity.
+      erewrite fix_context_eq.
+      1: tea.
+      apply All2_app.
+      1: by apply All2_same.
+      constructor.
+      2: by apply All2_same.
+      reflexivity.
+
+    + apply OnOne2_split in X as (?&?&?&?&((_&IH)&?)&?&?).
+      inversion e ; clear e.
+      destruct x,x0 ; cbn in *.
+      subst.
+      induction IH.
+      all: econstructor ; eauto.
+      constructor.
+      apply OnOne2_app.
+      by constructor.
+
+    + apply OnOne2_split in X as (?&?&?&?&((_&IH)&?)&?&?).
+      inversion e ; clear e.
+      destruct x,x0 ; cbn in *.
+      subst.
+      induction IH.
+      all: econstructor ; eauto.
+      apply congr1_cofix_body.
+      apply OnOne2_app.
+      constructor ; cbn.
+      split.
+      2: reflexivity.
+      erewrite fix_context_eq.
+      1: tea.
+      apply All2_app.
+      1: by apply All2_same.
+      constructor.
+      2: by apply All2_same.
+      reflexivity.
+  Qed.
+
+End Congr1.
+
+Section CongrAll.
+  Variable
+    (R : global_env -> context -> context -> term -> term -> Type)
+    (Rname : aname -> aname -> Prop) (Rinst : Instance.t -> Instance.t -> Prop)
+    (Σ : global_env).
+
+  Definition Rpredicate
+    (Rterm : context -> context -> term -> term -> Type) Γ Γ' p p' :=
+    All2 (Rterm Γ Γ') p.(pparams) p'.(pparams) ×
+    Rinst p.(puinst) p'.(puinst) ×
+    p.(pcontext) = p'.(pcontext)  ×
+    Rterm (Γ ,,, inst_case_predicate_context p) (Γ' ,,, inst_case_predicate_context p') p.(preturn) p'.(preturn).
+
+  Inductive congr_all (Γ Γ' : context) : term -> term -> Type :=
+
+  | congr_all_evar e args args' :
+      All2 (congr_all Γ Γ') args args' ->
+      congr_all Γ Γ' (tEvar e args) (tEvar e args')
+
+  | congr_all_app t t' u u' :
+      congr_all Γ Γ' t t' ->
+      congr_all Γ Γ' u u' ->
+      congr_all Γ Γ' (tApp t u) (tApp t' u')
+
+  | congr_all_lambda na na' ty ty' t t' :
+      Rname na na' ->
+      congr_all Γ Γ' ty ty' ->
+      congr_all (Γ,,vass na ty) (Γ',,vass na' ty') t t' ->
+      congr_all Γ Γ' (tLambda na ty t) (tLambda na' ty' t')
+
+  | congr_all_prod na na' a a' b b' :
+      Rname na na' ->
+      congr_all Γ Γ' a a' ->
+      congr_all (Γ ,, vass na a) (Γ' ,, vass na' a') b b' ->
+      congr_all Γ Γ' (tProd na a b) (tProd na' a' b')
+
+  | congr_all_letin na na' t t' ty ty' u u' :
+      Rname na na' ->
+      congr_all Γ Γ' t t' ->
+      congr_all Γ Γ' ty ty' ->
+      congr_all (Γ ,, vdef na t ty) (Γ' ,, vdef na' t' ty' ) u u' ->
+      congr_all Γ Γ' (tLetIn na t ty u) (tLetIn na' t' ty' u')
+
+  | congr_all_case ci p p' c c' brs brs' :
+      Rpredicate congr_all Γ Γ' p p' ->
+      congr_all Γ Γ' c c' ->
+      All2 (fun br br' =>
+        let ctx := inst_case_branch_context p br in
+        let ctx' := inst_case_branch_context p' br' in
+        on_Trel_eq (congr_all (Γ ,,, ctx) (Γ' ,,, ctx')) bbody bcontext br br'
+      ) brs brs' ->
+      congr_all Γ Γ' (tCase ci p c brs) (tCase ci p' c' brs')
+
+  | congr_all_proj p c c' :
+      congr_all Γ Γ' c c' ->
+      congr_all Γ Γ' (tProj p c) (tProj p c')
+
+  | congr_all_fix mfix mfix' idx :
+      All2 (fun x y =>
+        congr_all Γ Γ' x.(dtype) y.(dtype) ×
+        congr_all (Γ ,,, fix_context mfix) (Γ' ,,, fix_context mfix')
+          x.(dbody) y.(dbody) ×
+        x.(rarg) = y.(rarg) ×
+        Rname x.(dname) y.(dname)
+      ) mfix mfix' ->
+      congr_all Γ Γ' (tFix mfix idx) (tFix mfix' idx)
+
+  | congr_all_cofix mfix mfix' idx :
+      All2 (fun x y =>
+        congr_all Γ Γ' x.(dtype) y.(dtype) ×
+        congr_all (Γ ,,, fix_context mfix) (Γ' ,,, fix_context mfix')
+          x.(dbody) y.(dbody) ×
+        x.(rarg) = y.(rarg) ×
+        Rname x.(dname) y.(dname)
+      ) mfix mfix' ->
+      congr_all Γ Γ' (tCoFix mfix idx) (tCoFix mfix' idx)
+        
+  | congr_all_base t t' :
+      R Σ Γ Γ' t t' ->
+      congr_all Γ Γ' t t'.
+
+  Theorem congr_all_ind_all (P : context -> context -> term -> term -> Type) :
+
+    (forall (Γ Γ' : context) (e : nat) (args args' : list term),
+      All2 (fun t t' => P Γ Γ' t t' × congr_all Γ Γ' t t') args args' ->
+    P Γ Γ' (tEvar e args) (tEvar e args')) ->
+
+    (forall (Γ Γ' : context) (t t' u u' : term),
+      congr_all Γ Γ' t t' ->
+      P Γ Γ' t t' ->
+      congr_all Γ Γ' u u' ->
+      P Γ Γ' u u' ->
+    P Γ Γ' (tApp t u) (tApp t' u')) ->
+
+    (forall (Γ Γ' : context) (na na' : aname) (ty ty' t t' : term),
+      Rname na na' ->
+      congr_all Γ Γ' ty ty' ->
+      P Γ Γ' ty ty' ->
+      congr_all (Γ,, vass na ty) (Γ',, vass na' ty') t t' ->
+      P (Γ,, vass na ty) (Γ',, vass na' ty') t t' ->
+    P Γ Γ' (tLambda na ty t) (tLambda na' ty' t')) ->
+
+    (forall (Γ Γ' : context) (na na' : aname) (a a' b b' : term),
+      Rname na na' ->
+      congr_all Γ Γ' a a' ->
+      P Γ Γ' a a' ->
+      congr_all (Γ,, vass na a) (Γ',, vass na' a') b b' ->
+      P (Γ,, vass na a) (Γ',, vass na' a') b b' ->
+    P Γ Γ' (tProd na a b) (tProd na' a' b')) ->
+
+    (forall (Γ Γ' : context) (na na' : aname) (t t' ty ty' u u' : term),
+      Rname na na' ->
+      congr_all Γ Γ' t t' ->
+      P Γ Γ' t t' ->
+      congr_all Γ Γ' ty ty' ->
+      P Γ Γ' ty ty' ->
+      congr_all (Γ,, vdef na t ty) (Γ',, vdef na' t' ty') u u' ->
+      P (Γ,, vdef na t ty) (Γ',, vdef na' t' ty') u u' ->
+    P Γ Γ' (tLetIn na t ty u) (tLetIn na' t' ty' u')) ->
+
+    (forall (Γ Γ' : context) (ci : case_info) (p p' : predicate term)
+      (c c' : term) (brs brs' : list (branch term)),
+      Rpredicate (fun Δ Δ' t t' => P Δ Δ' t t' × congr_all Δ Δ' t t') Γ Γ' p p' ->
+      P Γ Γ' c c' ->
+      All2
+        (fun br br' : branch term =>
+            let ctx := inst_case_branch_context p br in
+            let ctx' := inst_case_branch_context p' br' in
+            on_Trel_eq (fun t t' =>
+              P (Γ,,, ctx) (Γ',,, ctx') t t' × congr_all (Γ,,, ctx) (Γ',,, ctx') t t')
+            bbody bcontext br br')
+        brs brs' ->
+    P Γ Γ' (tCase ci p c brs) (tCase ci p' c' brs')) ->
+    
+    (forall (Γ Γ' : context) (p : projection) (c c' : term),
+      congr_all Γ Γ' c c' ->
+      P Γ Γ' c c' ->
+    P Γ Γ' (tProj p c) (tProj p c')) ->
+
+    (forall (Γ Γ' : context) (mfix mfix' : mfixpoint term) (idx : nat),
+      All2
+        (fun x y : def term =>
+          P Γ Γ' (dtype x) (dtype y) ×
+          congr_all Γ Γ' (dtype x) (dtype y) ×
+          congr_all (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+            (dbody x) (dbody y) ×
+          P (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+            (dbody x) (dbody y) ×
+          rarg x = rarg y ×
+          Rname (dname x) (dname y)) mfix mfix' ->
+    P Γ Γ' (tFix mfix idx) (tFix mfix' idx)) ->
+
+    (forall (Γ Γ' : context) (mfix mfix' : mfixpoint term) (idx : nat),
+      All2
+        (fun x y : def term =>
+          P Γ Γ' (dtype x) (dtype y) ×
+          congr_all Γ Γ' (dtype x) (dtype y) ×
+          congr_all (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+            (dbody x) (dbody y) ×
+          P (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+            (dbody x) (dbody y) ×
+          rarg x = rarg y ×
+          Rname (dname x) (dname y)) mfix mfix' ->
+    P Γ Γ' (tCoFix mfix idx) (tCoFix mfix' idx)) ->
+    
+    (forall (Γ Γ' : context) (t t' : term),
+      R Σ Γ Γ' t t' ->
+    P Γ Γ' t t') ->
+
+    forall (Γ Γ' : context) (t t' : term),
+    congr_all Γ Γ' t t' ->
+    P Γ Γ' t t'.
+Proof.
+  intros.
+  revert Γ Γ' t t' X9.
+  fix aux 5.
+  move aux at top.
+  move X8 at top.
+  intros until t'.
+  destruct 1.
+
+  all: try solve [match goal with H : _ |- _ => eapply H ; eauto end].
+
+  - eapply X.
+    induction a.
+    all: constructor ; auto.
+    
+  - eapply X4 ; auto.
+    + unfold Rpredicate in *.
+      destruct r as (?&?&?&?).
+      repeat split ; auto.
+      induction a0.
+      all: constructor ; auto.
+    + induction a as [|? ? ? ? []].
+      all: constructor ; auto.
+
+  - eapply X6 ; auto.
+    generalize dependent (fix_context mfix).
+    generalize dependent (fix_context mfix').
+    intros ? ?.
+    induction 1 as [|? ? ? ? (?&?&?&?)].
+    all: constructor ; auto.
+    split ; auto.
+
+  - eapply X7 ; auto.
+    generalize dependent (fix_context mfix).
+    generalize dependent (fix_context mfix').
+    intros ? ?.
+    induction 1 as [|? ? ? ? (?&?&?&?)].
+    all: constructor ; auto.
+    split ; auto.
+
+  - by apply X8.
+
+Qed.
+
+End CongrAll.
+
+Lemma OnOne2_prod_inv :
+forall A (P : A -> A -> Type) Q l l',
+  OnOne2 (Trel_conj P Q) l l' ->
+  OnOne2 P l l' × OnOne2 Q l l'.
+Proof.
+intros A P Q l l' h.
+induction h.
+- destruct p.
+  split ; constructor ; auto.
+- destruct IHh.
+  split ; constructor ; auto.
+Qed.
+
+Lemma All2_eq :
+forall A (l l' : list A),
+  All2 eq l l' ->
+  l = l'.
+Proof.
+intros A l l' h.
+induction h ; eauto. subst. reflexivity.
+Qed.
+
+Lemma list_split_eq :
+forall A B (l l' : list (A × B)),
+  map fst l = map fst l' ->
+  map snd l = map snd l' ->
+  l = l'.
+Proof.
+intros A B l l' e1 e2.
+induction l in l', e1, e2 |- *.
+- destruct l' ; try discriminate. reflexivity.
+- destruct l' ; try discriminate.
+  simpl in *. inversion e1. inversion e2.
+  f_equal ; eauto.
+  destruct a, p. simpl in *. subst. reflexivity.
+Qed.
+
+Lemma map_inj :
+      forall A B (f : A -> B) l l',
+        (forall x y, f x = f y -> x = y) ->
+        map f l = map f l' ->
+        l = l'.
+Proof.
+  intros A B f l l' h e.
+  induction l in l', e |- *.
+  - destruct l' ; try discriminate. reflexivity.
+  - destruct l' ; try discriminate. inversion e.
+    f_equal ; eauto.
+Qed.
+
+Lemma rtrans_clos_incl {A} (R S : A -> A -> Type) : 
+      (forall x y, R x y -> rtrans_clos S x y) ->
+      forall x y, rtrans_clos R x y ->
+      rtrans_clos S x y.
+Proof.
+  intros HR x y h.
+  eapply clos_rt_rtn1_iff in h.
+  induction h; eauto.
+  * econstructor.
+  * apply clos_rt_rtn1_iff.
+    apply clos_rt_rtn1_iff in IHh1.
+    apply clos_rt_rtn1_iff in IHh2.
+    now transitivity y.
+Qed.
+
+Section Congr1CongrAll.
+
+  Context {Σ : global_env} {R : global_env -> context -> term -> term -> Type}.
+
+  Lemma congr_all_one_param Γ ci p c brs pars' :
+    OnOne2 ((clos_refl_trans (congr1 R Σ Γ))) p.(pparams) pars' ->
+    (clos_refl_trans (congr1 R Σ Γ)) (tCase ci p c brs) (tCase ci (set_pparams p pars') c brs).
+  Proof.
+    intros.
+    apply congr1_clos_refl_trans.
+    constructor.
+    eapply OnOne2_impl ; tea.
+    by constructor.
+  Qed.
+
+  Lemma congr_all_case_pars Γ ci p c brs pars' :
+    All2 ((clos_refl_trans (congr1 R Σ Γ))) p.(pparams) pars' ->
+    (clos_refl_trans (congr1 R Σ Γ)) (tCase ci p c brs) (tCase ci (set_pparams p pars') c brs).
+  Proof.
+    intros h.
+    apply All2_many_OnOne2 in h.
+    induction h.
+    - destruct p; reflexivity.
+    - econstructor 3.
+      + eapply IHh.
+      + assert (set_pparams p z = set_pparams (set_pparams p y) z) as ->
+        by now destruct p.
+        eapply congr_all_one_param; eassumption.
+  Qed.
+
+  Lemma congr_all_case_one_brs Γ (ci : case_info) p c brs brs' :
+    OnOne2 (fun br br' => 
+      let ctx := inst_case_branch_context p br in
+      on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, ctx))) bbody bcontext br br')
+    brs brs' ->
+    clos_refl_trans (congr1 R Σ Γ) (tCase ci p c brs) (tCase ci p c brs').
+    Proof.
+      intros.
+      apply congr1_clos_refl_trans.
+      constructor.
+      eapply OnOne2_impl ; tea.
+      intros ? ? [].
+      split.
+      2: assumption.
+      by constructor.
+    Qed.
+
+  Lemma congr_all_case_brs Γ ci p c brs brs' :
+    All2 (fun br br' => 
+      let ctx := inst_case_branch_context p br in
+      on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, ctx))) bbody bcontext br br')
+    brs brs' ->
+    clos_refl_trans (congr1 R Σ Γ) (tCase ci p c brs) (tCase ci p c brs').
+  Proof.
+    intros h.
+    eapply All2_many_OnOne2 in h.
+    induction h; trea.
+    etransitivity.
+    1: eapply IHh.
+    eapply congr_all_case_one_brs; eauto.
+  Qed.
+
+
+  Lemma congr_all_fix_one_ty Γ mfix idx mfix' :
+    OnOne2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ Γ))
+        dtype (fun x => (dname x, dbody x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tFix mfix idx) (tFix mfix' idx).
+  Proof.
+    intros h.
+    apply congr1_clos_refl_trans.
+    constructor.
+    eapply OnOne2_impl ; tea.
+    intros ? ? [].
+    split.
+    2: assumption.
+    by constructor.
+  Qed.
+
+  Lemma congr_all_fix_ty Γ mfix idx mfix' :
+    All2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ Γ))
+        dtype (fun x => (dname x, dbody x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tFix mfix idx) (tFix mfix' idx).
+  Proof.
+    intros h.
+    apply All2_many_OnOne2 in h.
+    induction h.
+    - reflexivity.
+    - etransitivity ; tea.
+      by eapply congr_all_fix_one_ty.
+  Qed.
+
+  Lemma congr_all_fix_one_body Γ mfix idx mfix' :
+    OnOne2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, fix_context mfix)))
+        dbody (fun x => (dname x, dtype x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tFix mfix idx) (tFix mfix' idx).
+  Proof.
+    intros h.
+    apply congr1_clos_refl_trans.
+    apply congr1_fix_body.
+    eapply OnOne2_impl ; tea.
+    intros ? ? [].
+    split.
+    2: assumption.
+    by constructor.
+  Qed.
+
+  Lemma congr_all_fix_body Γ mfix idx mfix' :
+    All2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, fix_context mfix)))
+      dbody (fun x => (dname x, dtype x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tFix mfix idx) (tFix mfix' idx).
+  Proof.
+    intros h.
+    apply All2_many_OnOne2 in h.
+    induction h.
+    - reflexivity.
+    - etransitivity ; tea.
+      eapply congr_all_fix_one_body.
+      suff -> : fix_context y = fix_context mfix.
+      {
+        eapply OnOne2_impl ; tea.
+        intros ? ? [].
+        auto.
+      }
+      symmetry.
+      clear -h.
+      induction h.
+      1: reflexivity.
+      etransitivity ; tea.
+      apply OnOne2_prod_inv_refl_r in r as [] => //.
+      apply fix_context_eq.
+      eapply All2_impl ; tea.
+      intros ? ? e.
+      by inversion e.
+  Qed.
+
+  Lemma congr_all_cofix_one_ty Γ mfix idx mfix' :
+    OnOne2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ Γ))
+        dtype (fun x => (dname x, dbody x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tCoFix mfix idx) (tCoFix mfix' idx).
+  Proof.
+    intros h.
+    apply congr1_clos_refl_trans.
+    constructor.
+    eapply OnOne2_impl ; tea.
+    intros ? ? [].
+    split.
+    2: assumption.
+    by constructor.
+  Qed.
+
+  Lemma congr_all_cofix_ty Γ mfix idx mfix' :
+    All2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ Γ))
+        dtype (fun x => (dname x, dbody x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tCoFix mfix idx) (tCoFix mfix' idx).
+  Proof.
+    intros h.
+    apply All2_many_OnOne2 in h.
+    induction h.
+    - reflexivity.
+    - etransitivity ; tea.
+      by eapply congr_all_cofix_one_ty.
+  Qed.
+
+  Lemma congr_all_cofix_one_body Γ mfix idx mfix' :
+    OnOne2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, fix_context mfix)))
+        dbody (fun x => (dname x, dtype x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tCoFix mfix idx) (tCoFix mfix' idx).
+  Proof.
+    intros h.
+    apply congr1_clos_refl_trans.
+    apply congr1_cofix_body.
+    eapply OnOne2_impl ; tea.
+    intros ? ? [].
+    split.
+    2: assumption.
+    by constructor.
+  Qed.
+
+  Lemma congr_all_cofix_body Γ mfix idx mfix' :
+    All2
+      (on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, fix_context mfix)))
+      dbody (fun x => (dname x, dtype x, rarg x)))
+    mfix mfix' ->
+    clos_refl_trans (congr1 R Σ Γ) (tCoFix mfix idx) (tCoFix mfix' idx).
+  Proof.
+    intros h.
+    apply All2_many_OnOne2 in h.
+    induction h.
+    - reflexivity.
+    - etransitivity ; tea.
+      eapply congr_all_cofix_one_body.
+      suff -> : fix_context y = fix_context mfix.
+      {
+        eapply OnOne2_impl ; tea.
+        intros ? ? [].
+        auto.
+      }
+      symmetry.
+      clear -h.
+      induction h.
+      1: reflexivity.
+      etransitivity ; tea.
+      apply OnOne2_prod_inv_refl_r in r as [] => //.
+      apply fix_context_eq.
+      eapply All2_impl ; tea.
+      intros ? ? e.
+      by inversion e.
+  Qed.
+
+  Theorem congr_all_clos_refl_trans Γ t u :
+    congr_all (fun Σ' Γ' _ => (clos_refl_trans (congr1 R Σ' Γ'))) eq eq Σ Γ Γ t u ->
+    clos_refl_trans (congr1 R Σ Γ) t u.
+  Proof.
+    generalize Γ at 2.
+    intros Γ'.
+    induction 1 using congr_all_ind_all.
+
+    all: try solve
+      [subst ; etransitivity ; apply congr1_clos_refl_trans ; do 2 constructor ; eassumption].
+
+    - apply All2_many_OnOne2 in X.
+      induction X.
+      1: reflexivity.
+      etransitivity ; tea.
+      apply OnOne2_split in r as (?&?&?&?&(IH&_)&?&?).
+      subst.
+      clear - IH.
+      rst_induction IH ; tea.
+      constructor.
+      apply OnOne2_app.
+      by constructor.
+   
+    - subst.
+      do 2 etransitivity.
+      all: apply congr1_clos_refl_trans ; do 2 constructor ; eassumption.
+      
+    - destruct X as (?&?&?&?&?).
+      do 2 etransitivity.
+      + apply congr_all_case_brs.
+        eapply All2_impl ; tea.
+        intros ? ? ((?&?)&?).
+        split ; auto.
+      + apply congr1_clos_refl_trans.
+        eapply congr1_case_discr.
+        constructor.
+        eassumption.
+      + apply congr1_clos_refl_trans.
+        eapply congr1_case_return.
+        constructor.
+        eassumption.
+      + replace p' with (set_pparams (set_preturn p (preturn p')) (pparams p'))
+          by (destruct p, p' ; cbn ; rewrite /set_pparams /set_preturn /= ; by f_equal).
+        apply congr_all_case_pars.
+        eapply All2_impl ; tea.
+        intros ? ? [].
+        auto.      
+
+    - assert (∑ mfix'',
+      All2 (
+        on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, fix_context mfix))) dbody
+                  (fun x : def term => (dname x, dtype x, rarg x))
+      ) mfix mfix'' ×
+      All2 (
+        on_Trel_eq (clos_refl_trans (congr1 R Σ Γ)) dtype
+                  (fun x : def term => (dname x, dbody x, rarg x))
+      ) mfix'' mfix') as [mfix'' []].
+      { revert X.
+        generalize dependent (Γ ,,, fix_context mfix).
+        intros Δ h.
+        induction h.
+        - exists []. auto.
+        - destruct r as (?&?&?&?&?&?).
+          destruct IHh as [mfix'' [? ?]].
+          eexists (mkdef _ _ _ _ _ :: mfix''). split.
+          + constructor ; auto. simpl. split ; tea. reflexivity.
+          + constructor ; auto. simpl. split ; eauto.
+            f_equal ; auto.
+            f_equal ; auto.
+      }
+      transitivity (tFix mfix'' idx).
+      + apply congr_all_fix_body.
+        eapply All2_impl ; tea.
+        intros ? ? [].
+        split ; auto.
+      + apply congr_all_fix_ty.
+        eapply All2_impl ; tea.
+        intros ? ? [].
+        split ; auto.
+        
+    - assert (∑ mfix'',
+      All2 (
+        on_Trel_eq (clos_refl_trans (congr1 R Σ (Γ ,,, fix_context mfix))) dbody
+                  (fun x : def term => (dname x, dtype x, rarg x))
+      ) mfix mfix'' ×
+      All2 (
+        on_Trel_eq (clos_refl_trans (congr1 R Σ Γ)) dtype
+                  (fun x : def term => (dname x, dbody x, rarg x))
+      ) mfix'' mfix') as [mfix'' []].
+      { revert X.
+        generalize dependent (Γ ,,, fix_context mfix).
+        intros Δ h.
+        induction h.
+        - exists []. auto.
+        - destruct r as (?&?&?&?&?&?).
+          destruct IHh as [mfix'' [? ?]].
+          eexists (mkdef _ _ _ _ _ :: mfix''). split.
+          + constructor ; auto. simpl. split ; tea. reflexivity.
+          + constructor ; auto. simpl. split ; eauto.
+            f_equal ; auto.
+            f_equal ; auto.
+      }
+      transitivity (tCoFix mfix'' idx).
+      + apply congr_all_cofix_body.
+        eapply All2_impl ; tea.
+        intros ? ? [].
+        split ; auto.
+      + apply congr_all_cofix_ty.
+        eapply All2_impl ; tea.
+        intros ? ? [].
+        split ; auto.
+
+    - assumption.
+
+  Qed.  
+      
+      
+
+
+   (*  Notation red1_one_term Γ :=
       (@OnOne2 (term × _) (Trel_conj (on_Trel (red1 Σ Γ) fst) (on_Trel eq snd))).
     Notation red_one_term Γ := 
       (@OnOne2 (term × _) (Trel_conj (on_Trel (red Σ Γ) fst) (on_Trel eq snd))).
@@ -875,21 +1658,21 @@ Section ReductionCongruence.
           redl l l1 ->
           P l1 l2 ->
           redl l l2.
-    Derive Signature for redl.
+    Derive Signature for redl. *)
 
-    Lemma redl_preserve {T A P} (l l' : list (T × A)) : 
+(*     Lemma redl_preserve {T A P} (l l' : list (T × A)) : 
       (forall (x y : list (T × A)), P x y -> map snd x = map snd y) ->
       @redl _ _ P l l' -> map snd l = map snd l'.
     Proof.
       intros HP. induction 1; auto.
       rewrite IHX. now apply HP.
-    Qed.
+    Qed. *)
 
-    Definition redl_term {A} Γ := @redl term A (red1_one_term Γ).
+(*     Definition redl_term {A} Γ := @redl term A (red1_one_term Γ).
     Definition redl_context {A} Γ := @redl context A (red1_one_context_decl Γ).
-    Definition redl_branch p Γ := @redl term _ (red1_one_branch p Γ).
+    Definition redl_branch p Γ := @redl term _ (red1_one_branch p Γ). *)
       
-    Lemma OnOne2_red_redl :
+(*     Lemma OnOne2_red_redl :
       forall Γ A (l l' : list (term × A)),
         red_one_term Γ l l' ->
         redl_term Γ l l'.
@@ -909,9 +1692,9 @@ Section ReductionCongruence.
         induction h.
         + constructor.
         + econstructor ; eauto. constructor ; eauto.
-    Qed.
+    Qed. *)
 
-    Definition cons_decl {A} (d : context_decl) (l : list (context × A)) :=
+    (* Definition cons_decl {A} (d : context_decl) (l : list (context × A)) :=
       match l with 
       | [] => []
       | (Γ , a) :: tl => (Γ ,, d, a) :: tl
@@ -984,9 +1767,10 @@ Section ReductionCongruence.
         induction h.
         + constructor.
         + econstructor ; eauto. constructor ; eauto.
-    Qed.
+    Qed. *)
 
-    Lemma red_one_decl_red_ctx_rel Γ :
+    (*TODO move*)
+    (* Lemma red_one_decl_red_ctx_rel Γ :
       inclusion (red_one_ctx_rel Σ Γ) (red_ctx_rel Σ Γ).
     Proof.
       intros x y h.
@@ -1013,9 +1797,9 @@ Section ReductionCongruence.
         eapply clos_rt_rtn1_iff.
         clear -IHh. induction IHh; econstructor; eauto.
         red. constructor. apply r.
-    Qed.
+    Qed. *)
 
-    Lemma OnOne2All_red_redl :
+    (* Lemma OnOne2All_red_redl :
       forall p Γ (l l' : list (term × context)),
         red_one_branch p Γ l l' ->
         redl_branch p Γ l l'.
@@ -1037,18 +1821,18 @@ Section ReductionCongruence.
         induction h.
         + constructor.
         + econstructor ; eauto. constructor ; eauto.
-    Qed.
+    Qed. *)
 
-    Lemma OnOne2_on_Trel_eq_unit :
+    (* Lemma OnOne2_on_Trel_eq_unit :
       forall A (R : A -> A -> Type) l l',
         OnOne2 R l l' ->
         OnOne2 (on_Trel_eq R (fun x => x) (fun x => tt)) l l'.
     Proof.
       intros A R l l' h.
       eapply OnOne2_impl ; eauto.
-    Qed.
+    Qed. *)
 
-    Lemma OnOne2_on_Trel_eq_red_redl :
+    (* Lemma OnOne2_on_Trel_eq_red_redl :
       forall Γ A B (f : A -> term) (g : A -> B) l l',
         OnOne2 (on_Trel_eq (red Σ Γ) f g) l l' ->
         redl_term Γ (map (fun x => (f x, g x)) l) (map (fun x => (f x, g x)) l').
@@ -1056,18 +1840,18 @@ Section ReductionCongruence.
       intros Γ A B f g l l' h.
       eapply OnOne2_red_redl.
       eapply OnOne2_map. eapply OnOne2_impl ; eauto.
-    Qed.
+    Qed. *)
 
-    Lemma OnOne2_context_redl Γ {A B} (f : A -> context) (g : A -> B) l l' :
+    (* Lemma OnOne2_context_redl Γ {A B} (f : A -> context) (g : A -> B) l l' :
       OnOne2 (on_Trel_eq (red_ctx_rel Σ Γ) f g) l l' ->
       redl_context Γ (map (fun x => (f x, g x)) l) (map (fun x => (f x, g x)) l').
     Proof.
       intros h. eapply red_one_context_redl.
       eapply OnOne2_map.
       eapply OnOne2_impl; eauto.
-    Qed.
+    Qed. *)
 
-    Lemma OnOne2All_on_Trel_eq_red_redl :
+   (*  Lemma OnOne2All_on_Trel_eq_red_redl :
       forall p Γ l l',
         OnOne2 (fun br br' =>
         let ctx := inst_case_branch_context p br in
@@ -1078,67 +1862,9 @@ Section ReductionCongruence.
       intros p Γ l l' h.
       eapply OnOne2All_red_redl.
       eapply OnOne2_map. eapply OnOne2_impl ; eauto.
-    Qed.
+    Qed. *)
 
-    Lemma OnOne2_prod_inv :
-      forall A (P : A -> A -> Type) Q l l',
-        OnOne2 (Trel_conj P Q) l l' ->
-        OnOne2 P l l' × OnOne2 Q l l'.
-    Proof.
-      intros A P Q l l' h.
-      induction h.
-      - destruct p.
-        split ; constructor ; auto.
-      - destruct IHh.
-        split ; constructor ; auto.
-    Qed.
-
-    Lemma OnOne2_prod_inv_refl_r :
-      forall A (P Q : A -> A -> Type) l l',
-        (forall x, Q x x) ->
-        OnOne2 (Trel_conj P Q) l l' ->
-        OnOne2 P l l' × All2 Q l l'.
-    Proof.
-      intros A P Q l l' hQ h.
-      induction h.
-      - destruct p. split.
-        + constructor. assumption.
-        + constructor.
-          * assumption.
-          * eapply All_All2.
-            -- instantiate (1 := fun x => True). eapply Forall_All.
-               eapply Forall_True. intro. auto.
-            -- intros x _. eapply hQ.
-      - destruct IHh. split.
-        + constructor. assumption.
-        + constructor ; eauto.
-    Qed.
-
-    Lemma All2_eq :
-      forall A (l l' : list A),
-        All2 eq l l' ->
-        l = l'.
-    Proof.
-      intros A l l' h.
-      induction h ; eauto. subst. reflexivity.
-    Qed.
-
-    Lemma list_split_eq :
-      forall A B (l l' : list (A × B)),
-        map fst l = map fst l' ->
-        map snd l = map snd l' ->
-        l = l'.
-    Proof.
-      intros A B l l' e1 e2.
-      induction l in l', e1, e2 |- *.
-      - destruct l' ; try discriminate. reflexivity.
-      - destruct l' ; try discriminate.
-        simpl in *. inversion e1. inversion e2.
-        f_equal ; eauto.
-        destruct a, p. simpl in *. subst. reflexivity.
-    Qed.
-
-    Notation decomp_branch := (fun x : branch term => (bbody x, bcontext x)).
+    (* Notation decomp_branch := (fun x : branch term => (bbody x, bcontext x)).
     Notation recomp_branch := (fun x : term * context => {| bbody := x.1; bcontext := x.2 |}).
     Notation decomp_branch' := (fun x : branch term => (bcontext x, bbody x)).
     Notation recomp_branch' := (fun x : context * term => {| bbody := x.2; bcontext := x.1 |}).
@@ -1201,224 +1927,106 @@ Section ReductionCongruence.
       induction l.
       - reflexivity.
       - cbn. destruct a. rewrite <- IHl. reflexivity.
-    Qed.
+    Qed. *)
 
-    Lemma map_inj :
-      forall A B (f : A -> B) l l',
-        (forall x y, f x = f y -> x = y) ->
-        map f l = map f l' ->
-        l = l'.
-    Proof.
-      intros A B f l l' h e.
-      induction l in l', e |- *.
-      - destruct l' ; try discriminate. reflexivity.
-      - destruct l' ; try discriminate. inversion e.
-        f_equal ; eauto.
-    Qed.
-
-    Context {Γ : context}.
-
-    Lemma red_abs na M M' N N' :
-      red Σ Γ M M' -> red Σ (Γ ,, vass na M') N N'
-      -> red Σ Γ (tLambda na M N) (tLambda na M' N').
+    Lemma congr1_abs na M M' N N' :
+      (clos_refl_trans (congr1 R Σ Γ)) M M' ->
+      (clos_refl_trans (congr1 R Σ (Γ ,, vass na M'))) N N' ->
+      (clos_refl_trans (congr1 R Σ Γ)) (tLambda na M N) (tLambda na M' N').
     Proof.
       intros. transitivity (tLambda na M' N).
-      - now apply (red_ctx_congr (tCtxLambda_l _ tCtxHole _)).
-      - now eapply (red_ctx_congr (tCtxLambda_r _ _ tCtxHole)).
+      - apply congr1_trans.
+        constructor.
+        by constructor.
+      - apply congr1_trans.
+        constructor.
+        by constructor.
     Qed.
 
-    Lemma red_app_r u v1 v2 :
-        red Σ Γ v1 v2 ->
-        red Σ Γ (tApp u v1) (tApp u v2).
+    Lemma congr1_app_r u v1 v2 :
+      (clos_refl_trans (congr1 R Σ Γ)) v1 v2 ->
+      (clos_refl_trans (congr1 R Σ Γ)) (tApp u v1) (tApp u v2).
     Proof.
-      intro h. rst_induction h; eauto with pcuic.
+      intro h.
+      apply congr1_trans.
+      by do 2 constructor.
     Qed.
 
     Lemma red_app M0 M1 N0 N1 :
-      red Σ Γ M0 M1 ->
-      red Σ Γ N0 N1 ->
-      red Σ Γ (tApp M0 N0) (tApp M1 N1).
+      (clos_refl_trans (congr1 R Σ Γ)) M0 M1 ->
+      (clos_refl_trans (congr1 R Σ Γ)) N0 N1 ->
+      (clos_refl_trans (congr1 R Σ Γ)) (tApp M0 N0) (tApp M1 N1).
     Proof.
       intros; transitivity (tApp M1 N0).
-      - now apply (red_ctx_congr (tCtxApp_l tCtxHole _)).
-      - now eapply (red_ctx_congr (tCtxApp_r _ tCtxHole)).
+      - apply congr1_trans.
+        by do 2 constructor.
+      - apply congr1_trans.
+        by do 2 constructor.
     Qed.
 
-    Fixpoint mkApps_context l :=
-      match l with
-      | [] => tCtxHole
-      | hd :: tl => tCtxApp_l (mkApps_context tl) hd
-      end.
-
-    Lemma mkApps_context_hole l Γ' : hole_context (mkApps_context (List.rev l)) Γ' = Γ'.
-    Proof. generalize (List.rev l) as l'; induction l'; simpl; auto. Qed.
-
-    Lemma fill_mkApps_context M l : fill_context M (mkApps_context (List.rev l)) = mkApps M l.
-    Proof.
-      rewrite -{2}(rev_involutive l).
-      generalize (List.rev l) as l'; induction l'; simpl; auto.
-      rewrite <- mkApps_nested. now rewrite <- IHl'.
-    Qed.
-
-    Lemma red1_mkApps_f :
+    Lemma congr1_mkApps_f :
       forall t u l,
-        red1 Σ Γ t u ->
-        red1 Σ Γ (mkApps t l) (mkApps u l).
+        congr1 R Σ Γ t u ->
+        congr1 R Σ Γ (mkApps t l) (mkApps u l).
     Proof.
       intros t u l h.
-      revert t u h.
-      induction l ; intros t u h.
+      induction l in t, u, h |- *.
       - assumption.
-      - cbn. apply IHl. constructor. assumption.
+      - apply IHl. by constructor.
     Qed.
 
-    Corollary red_mkApps_f :
+    Corollary _mkApps_f :
       forall t u l,
-        red Σ Γ t u ->
-        red Σ Γ (mkApps t l) (mkApps u l).
+        (clos_refl_trans (congr1 R Σ Γ)) t u ->
+        (clos_refl_trans (congr1 R Σ Γ)) (mkApps t l) (mkApps u l).
     Proof.
       intros t u π h. rst_induction h; eauto with pcuic.
-      eapply red1_mkApps_f. assumption.
+      by eapply congr1_mkApps_f.
     Qed.
 
     Lemma red_mkApps M0 M1 N0 N1 :
-      red Σ Γ M0 M1 ->
-      All2 (red Σ Γ) N0 N1 ->
-      red Σ Γ (mkApps M0 N0) (mkApps M1 N1).
+      (clos_refl_trans (congr1 R Σ Γ)) M0 M1 ->
+      All2 ((clos_refl_trans (congr1 R Σ Γ))) N0 N1 ->
+      (clos_refl_trans (congr1 R Σ Γ)) (mkApps M0 N0) (mkApps M1 N1).
     Proof.
       intros.
       induction X0 in M0, M1, X |- *. 1: auto.
-      simpl. eapply IHX0. now eapply red_app.
+      cbn. eapply IHX0. now eapply red_app.
     Qed.
 
     Lemma red_letin na d0 d1 t0 t1 b0 b1 :
-      red Σ Γ d0 d1 -> red Σ Γ t0 t1 -> red Σ (Γ ,, vdef na d1 t1) b0 b1 ->
-      red Σ Γ (tLetIn na d0 t0 b0) (tLetIn na d1 t1 b1).
+      (clos_refl_trans (congr1 R Σ Γ)) d0 d1 ->
+      (clos_refl_trans (congr1 R Σ Γ)) t0 t1 ->
+      (clos_refl_trans (congr1 R Σ (Γ ,, vdef na d1 t1))) b0 b1 ->
+      (clos_refl_trans (congr1 R Σ Γ)) (tLetIn na d0 t0 b0) (tLetIn na d1 t1 b1).
     Proof.
-      intros; transitivity (tLetIn na d1 t0 b0).
-      - now apply (red_ctx_congr (tCtxLetIn_l _ tCtxHole _ _)).
-      - transitivity (tLetIn na d1 t1 b0).
-        + now eapply (red_ctx_congr (tCtxLetIn_b _ _ tCtxHole _)).
-        + now eapply (red_ctx_congr (tCtxLetIn_r _ _ _ tCtxHole)).
-    Qed.
-        
-    Lemma red_one_param :
-      forall ci p c brs pars',
-        OnOne2 (red Σ Γ) p.(pparams) pars' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci (set_pparams p pars') c brs).
-    Proof.
-      intros ci p c l l' h.
-      apply OnOne2_on_Trel_eq_unit in h.
-      apply OnOne2_on_Trel_eq_red_redl in h.
-      dependent induction h.
-      - assert (p.(pparams) = l').
-        { eapply map_inj ; eauto.
-          intros y z e. cbn in e. inversion e. eauto.
-        } subst.
-        destruct p; reflexivity.
-      - set (f := fun x : term => (x, tt)) in *.
-        set (g := (fun '(x, _) => x) : term × unit -> term).
-        assert (el :  forall l, l = map f (map g l)).
-        { clear. intros l. induction l.
-          - reflexivity.
-          - cbn. destruct a, u. cbn. f_equal. assumption.
-        }
-        assert (el' :  forall l, l = map g (map f l)).
-        { clear. intros l. induction l.
-          - reflexivity.
-          - cbn. f_equal. assumption.
-        }
-        eapply trans_red.
-        + eapply IHh; tas. symmetry. apply el.
-        + change (set_pparams p l') with (set_pparams (set_pparams p (map g l1)) l').
-          econstructor. rewrite (el' l').
-          eapply OnOne2_map.
-          eapply OnOne2_impl ; eauto.
-          intros [? []] [? []] [h1 h2].
-          unfold on_Trel in h1, h2. cbn in *.
-          unfold on_Trel. cbn. assumption.
-    Qed.
-
-    Lemma red_case_pars :
-      forall ci p c brs pars',
-        All2 (red Σ Γ) p.(pparams) pars' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci (set_pparams p pars') c brs).
-    Proof.
-      intros ci p c brs pars' h.
-      apply All2_many_OnOne2 in h.
-      induction h.
-      - destruct p; reflexivity.
-      - eapply red_trans.
-        + eapply IHh.
-        + assert (set_pparams p z = set_pparams (set_pparams p y) z) as ->.
-          { now destruct p. }
-          eapply red_one_param; eassumption.
+      intros ; etransitivity ; [etransitivity |..].
+      all: try solve [apply congr1_trans ; do 2 constructor ; eassumption].
     Qed.
 
     Coercion ci_ind : case_info >-> inductive.
-    
-    (* Lemma red_one_pcontext :
-      forall ci p c brs pcontext',
-        red1_ctx_rel Σ Γ p.(pcontext) pcontext' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci (set_pcontext p pcontext') c brs).
-    Proof.
-      intros ci p c l l' h.
-      red in h.
-      constructor.
-      now constructor.
-    Qed. *)
-(*     
-    Lemma red_case_pcontext_red_ctx_rel :
-      forall ci p c brs pcontext',
-        red_ctx_rel Σ Γ p.(pcontext) pcontext' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci (set_pcontext p pcontext') c brs).
-    Proof.
-      intros ci p c brs pars' h.
-      red in h. eapply clos_rt_rtn1_iff in h.
-      induction h.
-      - destruct p; reflexivity.
-      - eapply red_trans.
-        + eapply IHh.
-        + assert (set_pcontext p z = set_pcontext (set_pcontext p y) z) as ->.
-          { now destruct p. }
-          eapply red_one_pcontext. eassumption.
-    Qed.
-    
-    Lemma red_case_pcontext :
-      forall ci p c brs pcontext',
-        OnOne2_local_env
-          (on_one_decl (fun (Δ : context) (t t' : term) => red Σ (Γ,,, Δ) t t')) 
-          p.(pcontext) pcontext' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci (set_pcontext p pcontext') c brs).
-    Proof.
-      intros ci p c l l' h.
-      eapply red_one_decl_red_ctx_rel in h.
-      now eapply red_case_pcontext_red_ctx_rel.
-    Qed. *)
 
-    Lemma red_case_p :
-      forall ci p c brs pret',
-        red Σ (Γ ,,, inst_case_predicate_context p) p.(preturn) pret' ->
-        red Σ Γ (tCase ci p c brs) 
-          (tCase ci (set_preturn p pret') c brs).
+    Lemma red_case_p : forall ci p c brs pret',
+      clos_refl_trans (congr1 R Σ (Γ ,,, inst_case_predicate_context p)) p.(preturn) pret' ->
+      clos_refl_trans (congr1 R Σ Γ) (tCase ci p c brs) 
+        (tCase ci (set_preturn p pret') c brs).
     Proof.
       intros ci p c brs p' h.
-      unshelve epose proof 
-        (red_ctx_congr (tCtxCase_pred ci p.(pparams) p.(puinst) p.(pcontext) tCtxHole c brs) h).
-      simp fill_context in X.
-      destruct p; auto.
+      apply congr1_trans.
+      by do 2 constructor.
     Qed.
 
     Lemma red_case_c :
       forall ci p c brs c',
-        red Σ Γ c c' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci p c' brs).
+        clos_refl_trans (congr1 R Σ Γ) c c' ->
+        clos_refl_trans (congr1 R Σ Γ) (tCase ci p c brs) (tCase ci p c' brs).
     Proof.
-      intros ci p c brs c' h.
-      rst_induction h; eauto with pcuic.
+      intros ci p c brs p' h.
+      apply congr1_trans.
+      by do 2 constructor.
     Qed.
     
-    Lemma map_bcontext_redl {pred} {l l' : list (term * context)} :  
+(*     Lemma map_bcontext_redl {pred} {l l' : list (term * context)} :  
       @redl _ _ (red1_one_branch pred Γ) l l' -> map snd l = map snd l'.
     Proof.
       induction 1; auto. rewrite IHX.
@@ -1426,60 +2034,25 @@ Section ReductionCongruence.
       induction p; simpl. 
       - destruct p as [? ?]. congruence.
       - now f_equal.
-    Qed.
-
-    (* Lemma wf_branches_to_gen idecl brs :
-      wf_branches idecl brs <->
-      wf_branches_gen idecl.(ind_ctors) (map bcontext brs).
-    Proof.
-      split.
-      - induction 1; constructor; auto.
-      - unfold wf_branches_gen.
-        rewrite -(map_id (ind_ctors idecl)).
-        intros H; eapply Forall2_map_inv in H. red.
-        solve_all.
     Qed. *)
 
-    (* Lemma OnOne2All_disj_on_Trel_eq_red_redl :
-      forall l l',
-        OnOne2 (fun br br' =>
-        let ctx := br.(bcontext) in
-        on_Trel_eq (red Σ (Γ ,,, ctx)) bbody bcontext br br') l l' ->        
-        OnOne2 (fun br br' =>
-        let ctx := br.(bcontext) in
-        on_Trel_eq (red Σ (Γ ,,, ctx)) bbody bcontext br br') l l' +
-        OnOne2 (on_Trel_eq (red_ctx_rel Σ Γ) bcontext bbody) l l'.
-    Proof.
-      intros l l'; induction 1.
-      - destruct p; [left|right]; constructor; auto.
-      - destruct IHX; [left|right]; constructor; auto.
-    Qed. *)
+    Definition red_one_brs p Γ brs brs' :=
+      OnOne2 (fun br br' => 
+        let ctx := inst_case_branch_context p br in
+        on_Trel_eq (red Σ (Γ ,,, ctx)) bbody bcontext br br')
+      brs brs'.
 
-    Lemma red_case_one_brs :
-      forall (ci : case_info) p c brs brs',
-        OnOne2 (fun br br' => 
-          let brctx := inst_case_branch_context p br in
-          on_Trel_eq (red Σ (Γ ,,, brctx)) bbody bcontext br br')
-          brs brs' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci p c brs').
-    Proof.
-      intros ci p c brs brs' h.
-      apply OnOne2All_on_Trel_eq_red_redl in h.
-      dependent induction h.
-      - apply list_map_swap_eq in H. now subst.
-      - etransitivity.
-        + eapply IHh; eauto. rewrite <- map_recomp_decomp. reflexivity.
-        + constructor. econstructor; eauto.
-          rewrite (map_decomp_recomp brs').
-          eapply OnOne2_map.
-          eapply OnOne2_impl ; eauto.
-    Qed.
+    Definition red_brs p Γ brs brs' :=
+      All2 (fun br br' => 
+        let ctx := inst_case_branch_context p br in
+        on_Trel_eq (red Σ (Γ ,,, ctx)) bbody bcontext br br')
+      brs brs'.
 
-    Lemma All3_length {A B C} {R : A -> B -> C -> Type} l l' l'' :
+(*     Lemma All3_length {A B C} {R : A -> B -> C -> Type} l l' l'' :
       All3 R l l' l'' -> #|l| = #|l'| /\ #|l'| = #|l''|.
-    Proof. induction 1; simpl; intuition auto. Qed.
+    Proof. induction 1; simpl; intuition auto. Qed. *)
 
-    Lemma All3_many_OnOne2All :
+(*     Lemma All3_many_OnOne2All :
       forall B A (R : B -> A -> A -> Type) lΔ l l',
         All3 R lΔ l l' ->
         rtrans_clos (OnOne2All R lΔ) l l'.
@@ -1496,91 +2069,9 @@ Section ReductionCongruence.
           * econstructor.
             -- econstructor 2. eassumption.
             -- eassumption.
-    Qed.
-    (* Lemma All2_many_OnOne2All :
-      forall B A (R : B -> A -> A -> Type) lΔ l l',
-        All2 (R  l l' ->
-        rtrans_clos (OnOne2All R lΔ) l l'.
-    Proof.
-      intros A R l l' h.
-      induction h.
-      - constructor.
-      - econstructor ; revgoals.
-        + constructor. eassumption.
-        + clear - IHh. rename IHh into h.
-          induction h.
-          * constructor.
-          * econstructor.
-            -- eassumption.
-            -- econstructor. assumption.
     Qed. *)
 
-    Definition red_one_brs p Γ brs brs' :=
-      OnOne2 (fun br br' => 
-        let ctx := inst_case_branch_context p br in
-        on_Trel_eq (red Σ (Γ ,,, ctx)) bbody bcontext br br')
-      brs brs'.
-
-    Definition red_brs p Γ brs brs' :=
-      All2 (fun br br' => 
-        let ctx := inst_case_branch_context p br in
-        on_Trel_eq (red Σ (Γ ,,, ctx)) bbody bcontext br br')
-      brs brs'.
-
-    Lemma rtrans_clos_incl {A} (R S : A -> A -> Type) : 
-      (forall x y, R x y -> rtrans_clos S x y) ->
-      forall x y, rtrans_clos R x y ->
-      rtrans_clos S x y.
-    Proof.
-      intros HR x y h.
-      eapply clos_rt_rtn1_iff in h.
-      induction h; eauto.
-      * econstructor.
-      * apply clos_rt_rtn1_iff.
-        apply clos_rt_rtn1_iff in IHh1.
-        apply clos_rt_rtn1_iff in IHh2.
-        now transitivity y.
-    Qed.
-
-    Lemma red_one_brs_red_brs p brs brs' :
-      red_brs p Γ brs brs' ->
-      rtrans_clos (red_one_brs p Γ) brs brs'.
-    Proof.
-      rewrite /red_brs.
-      intros h.
-      eapply All2_many_OnOne2 in h.
-      eapply rtrans_clos_incl; tea. clear h.
-      intros x y h.
-      eapply clos_rt_rtn1_iff.
-      induction h.
-      * destruct p.
-        etransitivity.
-        - constructor. constructor. intros ctx. rewrite -/ctx in p0. tea.
-        - constructor.
-          constructor. simpl. destruct p0. 
-          rewrite /inst_case_branch_context /= in r *. rewrite -e.
-          split; auto.
-      * clear -IHh. rename IHh into h.
-        induction h.
-        - constructor 1. constructor 2. apply r.
-        - constructor 2.
-        - econstructor 3; eauto.
-    Qed.
-
-    Lemma red_case_brs :
-      forall ci p c brs brs',
-        red_brs p Γ brs brs' ->
-        red Σ Γ (tCase ci p c brs) (tCase ci p c brs').
-    Proof.
-      intros ci p c brs brs' h.
-      eapply red_one_brs_red_brs in h.
-      induction h; trea.
-      + eapply red_trans.
-        * eapply IHh.
-        * eapply red_case_one_brs; eauto.
-    Qed.
-
-    Lemma All2_ind_OnOne2 {A} P (l l' : list A) :
+(*     Lemma All2_ind_OnOne2 {A} P (l l' : list A) :
       All2 P l l' ->
       forall x a a', nth_error l x = Some a ->
                      nth_error l' x = Some a' ->
@@ -1596,7 +2087,7 @@ Section ReductionCongruence.
           specialize (IHX _ _ _ H H0).
           simpl. constructor. auto.
     Qed.
-
+ *)
     Lemma red_case {ci p c brs pars' pret' c' brs'} :
        All2 (red Σ Γ) p.(pparams) pars' ->
       red Σ (Γ ,,, inst_case_predicate_context p) p.(preturn) pret' ->
@@ -1670,154 +2161,6 @@ Section ReductionCongruence.
     Proof.
       intros p c c' h.
       rst_induction h; eauto with pcuic.
-    Qed.
-
-    Lemma red_fix_one_ty :
-      forall mfix idx mfix',
-        OnOne2 (on_Trel_eq (red Σ Γ) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
-        red Σ Γ (tFix mfix idx) (tFix mfix' idx).
-    Proof.
-      intros mfix idx mfix' h.
-      apply OnOne2_on_Trel_eq_red_redl in h.
-      dependent induction h.
-      - assert (mfix = mfix').
-        { eapply map_inj ; eauto.
-          intros y z e. destruct y, z. inversion e. now subst.
-        } now subst.
-      - set (f := fun x : def term => (dtype x, (dname x, dbody x, rarg x))) in *.
-        set (g := fun '(ty, (na, bo, ra)) => mkdef term na ty bo ra).
-        assert (el :  forall l, l = map f (map g l)).
-        { clear. intros l. induction l.
-          - reflexivity.
-          - cbn. destruct a as [? [[? ?] ?]]. cbn. f_equal. assumption.
-        }
-        assert (el' :  forall l, l = map g (map f l)).
-        { clear. intros l. induction l.
-          - reflexivity.
-          - cbn. destruct a. cbn. f_equal. assumption.
-        }
-        eapply trans_red.
-        + eapply IHh. symmetry. apply el.
-        + constructor. rewrite (el' mfix').
-          eapply OnOne2_map.
-          eapply OnOne2_impl ; eauto.
-          intros [? [[? ?] ?]] [? [[? ?] ?]] [h1 h2].
-          unfold on_Trel in h1, h2. cbn in *. inversion h2. subst.
-          unfold on_Trel. split ; eauto.
-    Qed.
-
-    Lemma red_fix_ty :
-      forall mfix idx mfix',
-        All2 (on_Trel_eq (red Σ Γ) dtype (fun x => (dname x, dbody x, rarg x))) mfix mfix' ->
-        red Σ Γ (tFix mfix idx) (tFix mfix' idx).
-    Proof.
-      intros mfix idx mfix' h.
-      apply All2_many_OnOne2 in h.
-      induction h.
-      - reflexivity.
-      - eapply red_trans.
-        + eapply IHh.
-        + eapply red_fix_one_ty. assumption.
-    Qed.
-
-    Lemma red_fix_one_body :
-      forall mfix idx mfix',
-        OnOne2
-          (on_Trel_eq (red Σ (Γ ,,, fix_context mfix)) dbody (fun x => (dname x, dtype x, rarg x)))
-           mfix mfix' ->
-        red Σ Γ (tFix mfix idx) (tFix mfix' idx).
-    Proof.
-      intros mfix idx mfix' h.
-      apply OnOne2_on_Trel_eq_red_redl in h.
-      dependent induction h.
-      - assert (mfix = mfix').
-        { eapply map_inj ; eauto.
-          intros y z e. cbn in e. destruct y, z. inversion e. eauto.
-        } subst.
-        reflexivity.
-      - set (f := fun x : def term => (dbody x, (dname x, dtype x, rarg x))) in *.
-        set (g := fun '(bo, (na, ty, ra)) => mkdef term na ty bo ra).
-        assert (el :  forall l, l = map f (map g l)).
-        { clear. intros l. induction l.
-          - reflexivity.
-          - cbn. destruct a as [? [[? ?] ?]]. cbn. f_equal. assumption.
-        }
-        assert (el' :  forall l, l = map g (map f l)).
-        { clear. intros l. induction l.
-          - reflexivity.
-          - cbn. destruct a. cbn. f_equal. assumption.
-        }
-        eapply trans_red.
-        + eapply IHh. symmetry. apply el.
-        + eapply fix_red_body. rewrite (el' mfix').
-          eapply OnOne2_map.
-          eapply OnOne2_impl ; eauto.
-          intros [? [[? ?] ?]] [? [[? ?] ?]] [h1 h2].
-          unfold on_Trel in h1, h2. cbn in *. inversion h2. subst.
-          unfold on_Trel. simpl. split ; eauto.
-          assert (e : fix_context mfix = fix_context (map g l1)).
-          { clear - h el el'. induction h.
-            - rewrite <- el'. reflexivity.
-            - rewrite IHh.
-              unfold fix_context. f_equal.
-              assert (e : map snd l1 = map snd l2).
-              { clear - p. induction p.
-                - destruct p as [h1 h2]. unfold on_Trel in h2.
-                  cbn. f_equal. assumption.
-                - cbn. f_equal. assumption.
-              }
-              clear - e.
-              unfold mapi. generalize 0 at 2 4.
-              intro n.
-              induction l1 in l2, e, n |- *.
-              + destruct l2 ; try discriminate e. cbn. reflexivity.
-              + destruct l2 ; try discriminate e. cbn.
-                cbn in e. inversion e.
-                specialize (IHl1 _ H1 (S n)).
-                destruct a as [? [[? ?] ?]], p as [? [[? ?] ?]].
-                simpl in *. inversion H0. subst.
-                f_equal. auto.
-          }
-          rewrite <- e. assumption.
-    Qed.
-
-    Lemma red_fix_body :
-      forall mfix idx mfix',
-        All2
-          (on_Trel_eq (red Σ (Γ ,,, fix_context mfix)) dbody (fun x => (dname x, dtype x, rarg x)))
-           mfix mfix' ->
-        red Σ Γ (tFix mfix idx) (tFix mfix' idx).
-    Proof.
-      intros mfix idx mfix' h.
-      apply All2_many_OnOne2 in h.
-      induction h.
-      - reflexivity.
-      - eapply red_trans.
-        + eapply IHh.
-        + eapply red_fix_one_body.
-          assert (e : fix_context mfix = fix_context y).
-          { clear - h. induction h.
-            - reflexivity.
-            - rewrite IHh.
-              unfold fix_context. f_equal.
-              assert (e : map (fun d => (dname d, dtype d)) y = map (fun d => (dname d, dtype d)) z).
-              { clear - r. induction r.
-                - destruct p as [? e]. inversion e.
-                  destruct hd as [? ? ? ?], hd' as [? ? ? ?]. simpl in *. subst.
-                  reflexivity.
-                - cbn. f_equal. eapply IHr.
-              }
-              clear - e.
-              unfold mapi. generalize 0 at 2 4.
-              intro n.
-              induction y in z, e, n |- *.
-              + destruct z ; try discriminate e. reflexivity.
-              + destruct z ; try discriminate e. cbn.
-                cbn in e. inversion e.
-                destruct a as [? ? ? ?], d as [? ? ? ?]. simpl in *. subst.
-                f_equal. eapply IHy. assumption.
-          }
-          rewrite <- e. assumption.
     Qed.
 
     Lemma red_fix_congr :
