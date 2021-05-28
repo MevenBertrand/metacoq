@@ -1,9 +1,7 @@
 (* Distributed under the terms of the MIT license. *)
 From Coq Require Import CMorphisms.
 From MetaCoq.Template Require Import config utils.
-From MetaCoq.PCUIC Require Import PCUICAst PCUICAstUtils PCUICPosition
-     PCUICLiftSubst PCUICUnivSubst PCUICInduction
-     PCUICContextRelation PCUICCases.
+From MetaCoq.PCUIC Require Import PCUICAst PCUICAstUtils PCUICPosition PCUICCases PCUICContextRelation.
 
 Require Import ssreflect.
 Require Import Equations.Prop.DepElim.
@@ -34,9 +32,8 @@ Qed.
 
 Definition tDummy := tVar String.EmptyString.
 
-(** *** One step strong beta-zeta-iota-fix-delta reduction
-
-  Inspired by the reduction relation from Coq in Coq [Barras'99].
+(** 
+  Helper functions
 *)
 
 Arguments OnOne2 {A} P%type l l'.
@@ -76,26 +73,26 @@ Definition map_decl_na (f : aname -> aname) (g : term -> term) d :=
 
 (** We do not allow alpha-conversion and P applies to only one of the 
   fields in the context declaration. Used to define one-step context reduction. *)
-Definition on_one_decl (P : context -> term -> term -> Type)
-  Γ (d : context_decl) (d' : context_decl) : Type :=
-  match d, d' with
-  | {| decl_name := na; decl_body := None; decl_type := ty |},
-    {| decl_name := na'; decl_body := None; decl_type := ty' |} =>
-      na = na' × P Γ ty ty'
-  | {| decl_name := na; decl_body := Some b; decl_type := ty |},
-    {| decl_name := na'; decl_body := Some b'; decl_type := ty' |} =>
-      na = na' × 
-      ((P Γ ty ty' × b = b') +
-        (P Γ b b' × ty = ty'))
-  | _, _ => False
-  end.
+Inductive on_one_decl (P : context -> term -> term -> Type)
+  Γ : context_decl -> context_decl -> Type :=
+  | decl_ass : forall na ty ty', P Γ ty ty' -> on_one_decl P Γ (vass na ty) (vass na ty')
+  | decl_def_ty : forall na b ty ty', P Γ ty ty' -> on_one_decl P Γ (vdef na b ty) (vdef na b ty')
+  | decl_def_bd : forall na b b' ty, P Γ b b' -> on_one_decl P Γ (vdef na b ty) (vdef na b' ty).
 
 Lemma on_one_decl_impl (P Q : context -> term -> term -> Type) : 
   (forall Γ, inclusion (P Γ) (Q Γ)) ->
   forall Γ, inclusion (on_one_decl P Γ) (on_one_decl Q Γ).
 Proof.
-  intros HP Γ x y.
-  destruct x as [na [b|] ty], y as [na' [b'|] ty']; simpl; firstorder auto.
+  intros HP Γ x y [].
+  all: by constructor ; apply HP.
+Qed.
+
+Lemma on_one_decl_refl P :
+  (forall Γ, Reflexive (P Γ)) ->
+  forall Γ, Reflexive ((on_one_decl P) Γ).
+Proof.
+  intros r Γ [? [] ?].
+  all: constructor ; reflexivity.
 Qed.
 
 Lemma on_one_decl_map_na (P : context -> term -> term -> Type) f g : 
@@ -103,9 +100,9 @@ Lemma on_one_decl_map_na (P : context -> term -> term -> Type) f g :
     inclusion (on_one_decl (fun Γ => on_Trel (P (map (map_decl_na f g) Γ)) g) Γ)
     (on_Trel (on_one_decl P (map (map_decl_na f g) Γ)) (map_decl_na f g)).
 Proof.
-  intros Γ x y.
-  destruct x as [na [b|] ty], y as [na' [b'|] ty']; simpl in *; firstorder auto; subst; simpl;
-    auto.
+  intros Γ x y [].
+  all: rewrite /on_Trel in o |- *.
+  all: by constructor.
 Qed.
 
 Lemma on_one_decl_map (P : context -> term -> term -> Type) f : 
@@ -113,9 +110,9 @@ Lemma on_one_decl_map (P : context -> term -> term -> Type) f :
     inclusion (on_one_decl (fun Γ => on_Trel (P (map (map_decl f) Γ)) f) Γ)
     (on_Trel (on_one_decl P (map (map_decl f) Γ)) (map_decl f)).
 Proof.
-  intros Γ x y.
-  destruct x as [na [b|] ty], y as [na' [b'|] ty']; simpl in *; firstorder auto; subst; simpl;
-    auto.
+  intros Γ x y [].
+  all: rewrite /on_Trel in o |- *.
+  all: by constructor.
 Qed.
 
 Lemma on_one_decl_mapi_context (P : context -> term -> term -> Type) f : 
@@ -123,9 +120,9 @@ Lemma on_one_decl_mapi_context (P : context -> term -> term -> Type) f :
     inclusion (on_one_decl (fun Γ => on_Trel (P (mapi_context f Γ)) (f #|Γ|)) Γ)
     (on_Trel (on_one_decl P (mapi_context f Γ)) (map_decl (f #|Γ|))).
 Proof.
-  intros Γ x y.
-  destruct x as [na [b|] ty], y as [na' [b'|] ty']; simpl in *; firstorder auto; subst; simpl;
-    auto.
+  intros Γ x y [].
+  all: rewrite /on_Trel in o |- *.
+  all: by constructor.
 Qed.
 
 Lemma on_one_decl_test_impl (P Q : context -> term -> term -> Type) (p : term -> bool) : 
@@ -135,7 +132,8 @@ Lemma on_one_decl_test_impl (P Q : context -> term -> term -> Type) (p : term ->
     (forall x y, p x -> P Γ x y -> Q Γ x y) ->
     on_one_decl Q Γ d d'.
 Proof.
-  intros Γ [na [b|] ty] [na' [b'|] ty'] ond []%andb_and; simpl; firstorder auto.
+  intros Γ d d' [] []%andb_and ?.
+  all: constructor ; auto.
 Qed.
 
 Section OnOne_local_2.
@@ -242,11 +240,8 @@ Lemma on_one_decl_test_decl (P : context -> term -> term -> Type) Γ
   test_decl p d ->
   test_decl q d'.
 Proof.
-  intros Hp.
-  unfold test_decl.
-  destruct d as [na [b|] ty], d' as [na' [b'|] ty']; simpl in * => //;
-   intuition auto; rtoProp;
-    subst; simpl; intuition eauto.
+  intros Hp ? [] ?.
+  all: unfold test_decl in * ; cbn in * ; rtoProp ; eauto.
 Qed.
 
 Lemma OnOne2_local_env_impl_test {P Q ctx ctx'} {k} {p : nat -> term -> bool} : 
@@ -268,6 +263,10 @@ Proof.
   * move=> /= /andb_and [testq testd].
     constructor; auto.
 Qed.
+
+(** 
+  One hole congruence, used for one-step reduction
+*)
 
 Section Congr1.
 
@@ -750,25 +749,17 @@ Section Congr1.
     by apply congr1_invol, zip_congr1.
   Qed.
 
-  Lemma OnOne2_prod_inv_refl_r :
-  forall A (P Q : A -> A -> Type) l l',
-    (forall x, Q x x) ->
-    OnOne2 (Trel_conj P Q) l l' ->
-    OnOne2 P l l' × All2 Q l l'.
+  Lemma OnOne2_prod_inv :
+      forall A (P : A -> A -> Type) Q l l',
+        OnOne2 (Trel_conj P Q) l l' ->
+        OnOne2 P l l' × OnOne2 Q l l'.
   Proof.
-  intros A P Q l l' hQ h.
-  induction h.
-  - destruct p. split.
-    + constructor. assumption.
-    + constructor.
-      * assumption.
-      * eapply All_All2.
-        -- instantiate (1 := fun x => True). eapply Forall_All.
-          eapply Forall_True. intro. auto.
-        -- intros x _. eapply hQ.
-  - destruct IHh. split.
-    + constructor. assumption.
-    + constructor ; eauto.
+    intros A P Q l l' h.
+    induction h.
+    - destruct p.
+      split ; constructor ; auto.
+    - destruct IHh.
+      split ; constructor ; auto.
   Qed.
 
   Lemma congr1_refl Σ R :
@@ -892,7 +883,6 @@ Section Congr1.
     
   Qed. *)
 
-
   Theorem congr1_clos_refl_trans R Σ Γ t u :
     congr1 (fun Σ' Γ' => (clos_refl_trans (congr1 R Σ' Γ'))) Σ Γ t u ->
     clos_refl_trans (congr1 R Σ Γ) t u.
@@ -998,6 +988,78 @@ Section Congr1.
       constructor.
       2: by apply All2_same.
       reflexivity.
+  Qed.
+
+  Lemma congr1_mkApps_f R Σ Γ l u u' :
+  congr1 R Σ Γ u u' ->
+  congr1 R Σ Γ (mkApps u l) (mkApps u' l).
+  Proof.
+    intros h.
+    induction l in u, u', h |- *.
+    1: assumption.
+    all: by apply IHl ; constructor.
+  Qed.
+
+  Lemma congr1_mkApps_args R Σ Γ args args' u :
+  OnOne2 (congr1 R Σ Γ) args args' ->
+  congr1 R Σ Γ (mkApps u args) (mkApps u args').
+  Proof.
+  intros h.
+  induction h in u |- *.
+  - cbn.
+    apply congr1_mkApps_f.
+    by constructor.
+  - apply IHh.
+  Qed.
+
+  Lemma congr1_it_mkLambda_or_LetIn_f R Σ Γ Δ u u' :
+    congr1 R Σ (Γ ,,, Δ) u u' ->
+    congr1 R Σ Γ (it_mkLambda_or_LetIn Δ u) (it_mkLambda_or_LetIn Δ u').
+  Proof.
+    intros h.
+    induction Δ as [ | [? [] ?] ?] in u, u', h |- *.
+    1: assumption.
+    all: by apply IHΔ ; constructor.
+  Qed.
+
+  Lemma congr1_it_mkLambda_or_LetIn_ctx {R Σ} Γ Δ Δ' u :
+  OnOne2_local_env (on_one_decl (fun Δ : context => congr1 R Σ (Γ ,,, Δ))) Δ Δ' ->
+  congr1 R Σ Γ (it_mkLambda_or_LetIn Δ u)
+       (it_mkLambda_or_LetIn Δ' u).
+  Proof.
+    induction 1 in u |- *.
+    - inversion p. subst.
+      cbn.
+      apply congr1_it_mkLambda_or_LetIn_f.
+      by constructor.
+    - inversion p ; subst ; cbn.
+      all: apply congr1_it_mkLambda_or_LetIn_f ; by constructor.
+    - cbn. auto.
+  Qed.
+
+  Lemma congr1_it_mkProd_or_LetIn_f R Σ Γ Δ u u' :
+    congr1 R Σ (Γ ,,, Δ) u u' ->
+    congr1 R Σ Γ (it_mkProd_or_LetIn Δ u) (it_mkProd_or_LetIn Δ u').
+  Proof.
+    intros h.
+    induction Δ as [ | [? [] ?] ?] in u, u', h |- *.
+    1: assumption.
+    all: by apply IHΔ ; constructor.
+  Qed.
+
+  Lemma congr1_it_mkProd_or_LetIn_ctx {R Σ} Γ Δ Δ' u :
+  OnOne2_local_env (on_one_decl (fun Δ : context => congr1 R Σ (Γ ,,, Δ))) Δ Δ' ->
+  congr1 R Σ Γ (it_mkProd_or_LetIn Δ u)
+       (it_mkProd_or_LetIn Δ' u).
+  Proof.
+    induction 1 in u |- *.
+    - inversion p. subst.
+      cbn.
+      apply congr1_it_mkProd_or_LetIn_f.
+      by constructor.
+    - inversion p ; subst ; cbn.
+      all: apply congr1_it_mkProd_or_LetIn_f ; by constructor.
+    - cbn. auto.
   Qed.
 
 End Congr1.
@@ -1220,18 +1282,44 @@ Qed.
 
 End CongrAll.
 
-Lemma OnOne2_prod_inv :
-forall A (P : A -> A -> Type) Q l l',
-  OnOne2 (Trel_conj P Q) l l' ->
-  OnOne2 P l l' × OnOne2 Q l l'.
+Instance congr_all_refl_same R Rname Rinst Σ Γ :
+  (forall Γ, Reflexive (R Σ Γ Γ)) ->
+  Reflexive (congr_all R Rname Rinst Σ Γ Γ).
 Proof.
-intros A P Q l l' h.
-induction h.
-- destruct p.
-  split ; constructor ; auto.
-- destruct IHh.
-  split ; constructor ; auto.
+  constructor.
+  reflexivity.
 Qed.
+
+Instance congr_all_refl_diff R Rname Rinst Σ Γ Γ' :
+  (forall Γ Γ', Reflexive (R Σ Γ Γ')) ->
+  Reflexive (congr_all R Rname Rinst Σ Γ Γ').
+Proof.
+  constructor.
+  reflexivity.
+Qed.
+
+Hint Resolve All_All2 : all.
+Hint Resolve All2_same : pred.
+
+Lemma OnOne2_All2 {A}:
+  forall (ts ts' : list A) P Q,
+    OnOne2 P ts ts' ->
+    (forall x y, P x y -> Q x y)%type ->
+    (forall x, Q x x) ->
+    All2 Q ts ts'.
+Proof.
+  intros ts ts' P Q X.
+  induction X; intuition auto with pred.
+Qed.
+
+Ltac OnOne2_All2 :=
+  match goal with
+  | [ H : OnOne2 ?P ?ts ?ts' |- All2 ?Q ?ts ?ts' ] =>
+    unshelve eapply (OnOne2_All2 _ _ P Q H); simpl; intros
+  end.
+
+Hint Extern 0 (All2 _ _ _) => OnOne2_All2; intuition auto with pred : pred.
+
 
 Lemma All2_eq :
 forall A (l l' : list A),
@@ -1288,6 +1376,106 @@ Qed.
 Section Congr1CongrAll.
 
   Context {Σ : global_env} {R : global_env -> context -> term -> term -> Type}.
+
+  Theorem congr1_congr_all Γ t u :
+    (forall Γ, Reflexive (R Σ Γ)) ->
+    congr1 R Σ Γ t u -> congr_all (fun Σ Γ Γ' => R Σ Γ) eq eq Σ Γ Γ t u.
+  Proof.
+    intros rR.
+    assert (forall Γ, context -> Reflexive (R Σ Γ)) by (intros ; apply rR).
+    induction 1 using congr1_ind_all.
+
+    all: try solve [constructor ; auto ; reflexivity].
+
+    - constructor.
+      + repeat split.
+        2: reflexivity.
+        eapply OnOne2_All2 ; tea.
+        2: reflexivity.
+        by intros ? ? [].
+      + reflexivity.
+      + apply All2_same.
+        intros ; split.
+        all: reflexivity.
+
+    - constructor.
+      + repeat split.
+        1: apply All2_same ; reflexivity.
+        assumption.
+      + reflexivity.
+      + apply All2_same.
+        intros ; split.
+        all: reflexivity.
+    
+    - constructor.
+      + repeat split.
+        1: apply All2_same ; reflexivity.
+        reflexivity.
+      + assumption.
+      + apply All2_same.
+        intros ; split.
+        all: reflexivity.
+        
+    - constructor.
+      + repeat split.
+      1: apply All2_same ; reflexivity.
+      reflexivity.
+      + reflexivity.
+      + eapply OnOne2_All2 ; tea.
+        2: split ; reflexivity.
+        1: intros ? ? ((?&?)&?) ; split ; auto.
+        suff -> : (inst_case_branch_context p y = inst_case_branch_context p x) by assumption.
+        by rewrite /inst_case_branch_context e.
+
+    - constructor.
+      eapply OnOne2_All2 ; tea.
+      2: reflexivity.
+      by intros ? ? [].
+
+    - constructor.
+      eapply OnOne2_All2 ; tea.
+      2: repeat split ; reflexivity.
+      intros ? ? ((?&?)&e).
+      inversion e ; clear e.
+      repeat split.
+      2: reflexivity.
+      assumption.
+
+    - constructor.
+      eapply OnOne2_All2 ; tea.
+      2: repeat split ; reflexivity.
+      intros ? ? ((?&?)&e).
+      inversion e ; clear e.
+      repeat split.
+      1: reflexivity.
+      rewrite -(fix_context_eq mfix mfix') //.
+      eapply OnOne2_All2 ; tea.
+      2: reflexivity.
+      intros ? ? [? e].
+      by inversion e.
+
+    - constructor.
+      eapply OnOne2_All2 ; tea.
+      2: repeat split ; reflexivity.
+      intros ? ? ((?&?)&e).
+      inversion e ; clear e.
+      repeat split.
+      2: reflexivity.
+      assumption.
+
+    - constructor.
+      eapply OnOne2_All2 ; tea.
+      2: repeat split ; reflexivity.
+      intros ? ? ((?&?)&e).
+      inversion e ; clear e.
+      repeat split.
+      1: reflexivity.
+      rewrite -(fix_context_eq mfix mfix') //.
+      eapply OnOne2_All2 ; tea.
+      2: reflexivity.
+      intros ? ? [? e].
+      by inversion e.
+  Qed.
 
   Lemma congr_all_one_param Γ ci p c brs pars' :
     OnOne2 ((clos_refl_trans (congr1 R Σ Γ))) p.(pparams) pars' ->
@@ -1420,9 +1608,10 @@ Section Congr1CongrAll.
       induction h.
       1: reflexivity.
       etransitivity ; tea.
-      apply OnOne2_prod_inv_refl_r in r as [] => //.
+      apply OnOne2_prod_inv in r as [] => //.
       apply fix_context_eq.
-      eapply All2_impl ; tea.
+      eapply OnOne2_All2 ; tea.
+      2: reflexivity.
       intros ? ? e.
       by inversion e.
   Qed.
@@ -1500,9 +1689,10 @@ Section Congr1CongrAll.
       induction h.
       1: reflexivity.
       etransitivity ; tea.
-      apply OnOne2_prod_inv_refl_r in r as [] => //.
+      apply OnOne2_prod_inv in r as [] => //.
       apply fix_context_eq.
-      eapply All2_impl ; tea.
+      eapply OnOne2_All2 ; tea.
+      2: reflexivity.
       intros ? ? e.
       by inversion e.
   Qed.
@@ -1637,54 +1827,57 @@ Section Congr1CongrAll.
     by do 2 constructor.
   Qed.
 
-
-  Corollary congr_all_it_mkLambda_or_LetIn Γ Δ u v :
-    clos_refl_trans (congr1 R Σ (Γ,,,Δ)) u v ->
-    (clos_refl_trans (congr1 R Σ Γ)) (it_mkLambda_or_LetIn Δ u)
-        (it_mkLambda_or_LetIn Δ v).
+  Corollary congr_all_it_mkLambda_or_LetIn Γ Δ Δ' u u' :
+    All2_fold (fun Δ _ => on_one_decl
+      (fun Δ : context => clos_refl_trans (congr1 R Σ (Γ ,,, Δ))) Δ) Δ Δ' ->
+    clos_refl_trans (congr1 R Σ (Γ ,,, Δ)) u u' ->
+    (clos_refl_trans (congr1 R Σ Γ)) (it_mkLambda_or_LetIn Δ u) (it_mkLambda_or_LetIn Δ' u').
   Proof.
-    intros h.
-    induction Δ as [|[? [] ?]] in u, v, h |- *.
-    1: auto.
-    all: by cbn ; apply IHΔ, congr_all_clos_refl_trans ; do 2 constructor.
+  intros h h'.
+  induction h in u, u', h' |- *.
+  1: auto.
+  inversion p ; subst.
+  - cbn. apply IHh ; auto.
+    apply congr_all_clos_refl_trans.
+    constructor ; auto.
+    all: constructor ; auto.
+  - cbn. apply IHh ; auto.
+    apply congr_all_clos_refl_trans.
+    constructor ; auto.
+    all: constructor ; auto.
+  - cbn. apply IHh ; auto.
+    apply congr_all_clos_refl_trans.
+    constructor ; auto.
+    all: constructor ; auto.
   Qed.
 
-  Corollary congr_all_it_mkProd_or_LetIn Γ Δ u v :
-    clos_refl_trans (congr1 R Σ (Γ ,,, Δ)) u v ->
-    clos_refl_trans (congr1 R Σ Γ) (it_mkProd_or_LetIn Δ u)
-        (it_mkProd_or_LetIn Δ v).
+  Corollary congr_all_it_mkProd_or_LetIn Γ Δ Δ' u u' :
+    All2_fold (fun Δ _ => on_one_decl
+      (fun Δ : context => clos_refl_trans (congr1 R Σ (Γ ,,, Δ))) Δ) Δ Δ' ->
+    clos_refl_trans (congr1 R Σ (Γ ,,, Δ)) u u' ->
+    (clos_refl_trans (congr1 R Σ Γ)) (it_mkProd_or_LetIn Δ u) (it_mkProd_or_LetIn Δ' u').
   Proof.
-    intros h.
-    induction Δ as [|[? [] ?]] in u, v, h |- *.
+    intros h h'.
+    induction h in u, u', h' |- *.
     1: auto.
-    all: by cbn ; apply IHΔ, congr_all_clos_refl_trans ; do 2 constructor.
+    inversion p ; subst.
+    - cbn. apply IHh ; auto.
+      apply congr_all_clos_refl_trans.
+      constructor ; auto.
+      all: constructor ; auto.
+    - cbn. apply IHh ; auto.
+      apply congr_all_clos_refl_trans.
+      constructor ; auto.
+      all: constructor ; auto.
+    - cbn. apply IHh ; auto.
+      apply congr_all_clos_refl_trans.
+      constructor ; auto.
+      all: constructor ; auto.
   Qed.
       
 End Congr1CongrAll.
 
 Coercion ci_ind : case_info >-> inductive.
-
-Hint Resolve All_All2 : all.
-Hint Resolve All2_same : pred.
-
-Lemma OnOne2_All2 {A}:
-  forall (ts ts' : list A) P Q,
-    OnOne2 P ts ts' ->
-    (forall x y, P x y -> Q x y)%type ->
-    (forall x, Q x x) ->
-    All2 Q ts ts'.
-Proof.
-  intros ts ts' P Q X.
-  induction X; intuition auto with pred.
-Qed.
-
-Ltac OnOne2_All2 :=
-  match goal with
-  | [ H : OnOne2 ?P ?ts ?ts' |- All2 ?Q ?ts ?ts' ] =>
-    unshelve eapply (OnOne2_All2 _ _ P Q H); simpl; intros
-  end.
-
-Hint Extern 0 (All2 _ _ _) => OnOne2_All2; intuition auto with pred : pred.
 
 Lemma nth_error_firstn_skipn {A} {l : list A} {n t} : 
   nth_error l n = Some t -> 
@@ -1725,17 +1918,6 @@ Section Stacks.
   Context (Σ : global_env_ext).
   Context `{checker_flags}.
 
-(*   Lemma congr1_zipp R Γ t u π :
-      congr1 R Σ Γ t u ->
-      congr1 R Σ Γ (zipp t π) (zipp u π).
-  Proof.
-    intros h.
-    unfold zipp.
-    case_eq (decompose_stack π). intros l ρ e.
-    eapply red1_mkApps_f.
-    assumption.
-  Qed. *)
-
   Lemma congr_all_zipp R Γ t u π :
     clos_refl_trans (congr1 R Σ Γ) t u ->
     clos_refl_trans (congr1 R Σ Γ) (zipp t π) (zipp u π).
@@ -1749,22 +1931,7 @@ Section Stacks.
     reflexivity.
   Qed.
 
-(*   Lemma red1_zippx :
-    forall Γ t u π,
-      red1 Σ (Γ ,,, stack_context π) t u ->
-      red1 Σ Γ (zippx t π) (zippx u π).
-  Proof.
-    intros Γ t u π h.
-    unfold zippx.
-    case_eq (decompose_stack π). intros l ρ e.
-    eapply red1_it_mkLambda_or_LetIn.
-    eapply red1_mkApps_f.
-    pose proof (decompose_stack_eq _ _ _ e). subst.
-    rewrite stack_context_appstack in h.
-    assumption.
-  Qed. *)
-
-  Lemma red_zippx R Γ t u π :
+  Lemma congr_all_zippx R Γ t u π :
     clos_refl_trans (congr1 R Σ (Γ,,, stack_context π)) t u ->
     clos_refl_trans (congr1 R Σ Γ) (zippx t π) (zippx u π).
   Proof.
@@ -1773,10 +1940,12 @@ Section Stacks.
     case_eq (decompose_stack π). intros l ρ e.
     pose proof (decompose_stack_eq _ _ _ e). subst.
     apply congr_all_it_mkLambda_or_LetIn.
+    1: apply All2_fold_refl, on_one_decl_refl.
+    1: intros ; apply clos_rt_refl.
     apply congr_all_mkApps.
     1: erewrite <- stack_context_appstack ; eassumption.
     apply All2_same.
     reflexivity.
   Qed.
-  
+
 End Stacks.

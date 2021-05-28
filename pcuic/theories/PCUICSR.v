@@ -650,19 +650,6 @@ Proof.
   intros; now eapply red_ctx_context_equality, red_one_decl_red_context.
 Qed.
 
-Lemma red1_it_mkLambda_or_LetIn_ctx {cf} {Σ} {wfΣ : wf Σ} Γ Δ Δ' u :
-  OnOne2_local_env (on_one_decl (fun Δ : context => red1 Σ (Γ ,,, Δ))) Δ Δ' ->
-  red1 Σ Γ (it_mkLambda_or_LetIn Δ u)
-       (it_mkLambda_or_LetIn Δ' u).
-Proof.
-  induction 1 in u |- *.
-  - depelim p; subst; rewrite /it_mkLambda_or_LetIn /=. eapply red1_it_mkLambda_or_LetIn.
-    simpl. now constructor.
-  - depelim p; subst; rewrite /=; eapply red1_it_mkLambda_or_LetIn.
-    destruct s as [[red ->]|[red ->]]; constructor; auto.
-  - simpl. apply IHX.
-Qed.
-
 (* Lemma onone_red_cont_context_subst {cf} {Σ} {wfΣ : wf Σ} Γ s s' Δ Δ' :
   wf_local Σ (Γ ,,, Δ' ,,, Δ) ->
   untyped_subslet Γ (List.rev s) Δ' ->

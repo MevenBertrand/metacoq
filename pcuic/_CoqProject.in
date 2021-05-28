@@ -17,6 +17,7 @@ theories/PCUICTyping.v
 theories/PCUICGlobalEnv.v
 theories/PCUICInversion.v
 theories/PCUICPosition.v
+theories/PCUICCongrClosure.v
 theories/PCUICNormal.v
 theories/PCUICNameless.v
 theories/PCUICEquality.v
