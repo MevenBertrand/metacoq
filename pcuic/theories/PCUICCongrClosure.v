@@ -1,6 +1,6 @@
 (* Distributed under the terms of the MIT license. *)
 From Coq Require Import CMorphisms.
-From MetaCoq.Template Require Import config utils.
+From MetaCoq.Template Require Import config utils BasicAst.
 From MetaCoq.PCUIC Require Import PCUICAst PCUICAstUtils PCUICPosition PCUICCases PCUICContextRelation.
 
 Require Import ssreflect.
@@ -883,6 +883,20 @@ Section Congr1.
     
   Qed. *)
 
+  Lemma congr1_monotone R R' Σ Γ :
+    (forall Σ Γ, subrelation (R Σ Γ) (R' Σ Γ)) ->
+    subrelation (congr1 R Σ Γ) (congr1 R' Σ Γ).
+  Proof.
+  intros incl t t' r.
+  induction r using congr1_ind_all in R', incl |- *.
+
+  all: try solve [constructor ; auto].
+  all: try solve [constructor ; eapply OnOne2_impl ; tea ; intros ? ? [] ; auto].
+  all: try solve [ constructor ; eapply OnOne2_impl ; tea ; intros ? ? [[] ] ; intuition auto].
+
+  by constructor ; apply incl.
+  Qed.
+
   Theorem congr1_clos_refl_trans R Σ Γ t u :
     congr1 (fun Σ' Γ' => (clos_refl_trans (congr1 R Σ' Γ'))) Σ Γ t u ->
     clos_refl_trans (congr1 R Σ Γ) t u.
@@ -1066,180 +1080,181 @@ End Congr1.
 
 Section CongrAll.
   Variable
-    (R : global_env -> context -> context -> term -> term -> Type)
-    (Rname : aname -> aname -> Prop) (Rinst : Instance.t -> Instance.t -> Prop)
+    (R : conv_pb -> global_env -> context -> context -> term -> term -> Type)
+    (Rname : aname -> aname -> Prop) (Rinst : conv_pb -> Instance.t -> Instance.t -> Prop)
     (Σ : global_env).
 
   Definition Rpredicate
     (Rterm : context -> context -> term -> term -> Type) Γ Γ' p p' :=
     All2 (Rterm Γ Γ') p.(pparams) p'.(pparams) ×
-    Rinst p.(puinst) p'.(puinst) ×
+    Rinst Conv p.(puinst) p'.(puinst) ×
     p.(pcontext) = p'.(pcontext)  ×
     Rterm (Γ ,,, inst_case_predicate_context p) (Γ' ,,, inst_case_predicate_context p') p.(preturn) p'.(preturn).
 
-  Inductive congr_all (Γ Γ' : context) : term -> term -> Type :=
+  Inductive congr_all (le : conv_pb) (Γ Γ' : context) : term -> term -> Type :=
 
   | congr_all_evar e args args' :
-      All2 (congr_all Γ Γ') args args' ->
-      congr_all Γ Γ' (tEvar e args) (tEvar e args')
+      All2 (congr_all Conv Γ Γ') args args' ->
+      congr_all le Γ Γ' (tEvar e args) (tEvar e args')
 
   | congr_all_app t t' u u' :
-      congr_all Γ Γ' t t' ->
-      congr_all Γ Γ' u u' ->
-      congr_all Γ Γ' (tApp t u) (tApp t' u')
+      congr_all le Γ Γ' t t' ->
+      congr_all Conv Γ Γ' u u' ->
+      congr_all le Γ Γ' (tApp t u) (tApp t' u')
 
   | congr_all_lambda na na' ty ty' t t' :
       Rname na na' ->
-      congr_all Γ Γ' ty ty' ->
-      congr_all (Γ,,vass na ty) (Γ',,vass na' ty') t t' ->
-      congr_all Γ Γ' (tLambda na ty t) (tLambda na' ty' t')
+      congr_all Conv Γ Γ' ty ty' ->
+      congr_all le (Γ,,vass na ty) (Γ',,vass na' ty') t t' ->
+      congr_all le Γ Γ' (tLambda na ty t) (tLambda na' ty' t')
 
   | congr_all_prod na na' a a' b b' :
       Rname na na' ->
-      congr_all Γ Γ' a a' ->
-      congr_all (Γ ,, vass na a) (Γ' ,, vass na' a') b b' ->
-      congr_all Γ Γ' (tProd na a b) (tProd na' a' b')
+      congr_all Conv Γ Γ' a a' ->
+      congr_all le (Γ ,, vass na a) (Γ' ,, vass na' a') b b' ->
+      congr_all le Γ Γ' (tProd na a b) (tProd na' a' b')
 
   | congr_all_letin na na' t t' ty ty' u u' :
       Rname na na' ->
-      congr_all Γ Γ' t t' ->
-      congr_all Γ Γ' ty ty' ->
-      congr_all (Γ ,, vdef na t ty) (Γ' ,, vdef na' t' ty' ) u u' ->
-      congr_all Γ Γ' (tLetIn na t ty u) (tLetIn na' t' ty' u')
+      congr_all Conv Γ Γ' t t' ->
+      congr_all Conv Γ Γ' ty ty' ->
+      congr_all le (Γ ,, vdef na t ty) (Γ' ,, vdef na' t' ty' ) u u' ->
+      congr_all le Γ Γ' (tLetIn na t ty u) (tLetIn na' t' ty' u')
 
   | congr_all_case ci p p' c c' brs brs' :
-      Rpredicate congr_all Γ Γ' p p' ->
-      congr_all Γ Γ' c c' ->
+      Rpredicate (congr_all Conv) Γ Γ' p p' ->
+      congr_all Conv Γ Γ' c c' ->
       All2 (fun br br' =>
         let ctx := inst_case_branch_context p br in
         let ctx' := inst_case_branch_context p' br' in
-        on_Trel_eq (congr_all (Γ ,,, ctx) (Γ' ,,, ctx')) bbody bcontext br br'
+        on_Trel_eq (congr_all Conv (Γ ,,, ctx) (Γ' ,,, ctx')) bbody bcontext br br'
       ) brs brs' ->
-      congr_all Γ Γ' (tCase ci p c brs) (tCase ci p' c' brs')
+      congr_all le Γ Γ' (tCase ci p c brs) (tCase ci p' c' brs')
 
   | congr_all_proj p c c' :
-      congr_all Γ Γ' c c' ->
-      congr_all Γ Γ' (tProj p c) (tProj p c')
+      congr_all Conv Γ Γ' c c' ->
+      congr_all le Γ Γ' (tProj p c) (tProj p c')
 
   | congr_all_fix mfix mfix' idx :
       All2 (fun x y =>
-        congr_all Γ Γ' x.(dtype) y.(dtype) ×
-        congr_all (Γ ,,, fix_context mfix) (Γ' ,,, fix_context mfix')
+        congr_all Conv Γ Γ' x.(dtype) y.(dtype) ×
+        congr_all Conv (Γ ,,, fix_context mfix) (Γ' ,,, fix_context mfix')
           x.(dbody) y.(dbody) ×
         x.(rarg) = y.(rarg) ×
         Rname x.(dname) y.(dname)
       ) mfix mfix' ->
-      congr_all Γ Γ' (tFix mfix idx) (tFix mfix' idx)
+      congr_all le Γ Γ' (tFix mfix idx) (tFix mfix' idx)
 
   | congr_all_cofix mfix mfix' idx :
       All2 (fun x y =>
-        congr_all Γ Γ' x.(dtype) y.(dtype) ×
-        congr_all (Γ ,,, fix_context mfix) (Γ' ,,, fix_context mfix')
+        congr_all Conv Γ Γ' x.(dtype) y.(dtype) ×
+        congr_all Conv (Γ ,,, fix_context mfix) (Γ' ,,, fix_context mfix')
           x.(dbody) y.(dbody) ×
         x.(rarg) = y.(rarg) ×
         Rname x.(dname) y.(dname)
       ) mfix mfix' ->
-      congr_all Γ Γ' (tCoFix mfix idx) (tCoFix mfix' idx)
+      congr_all le Γ Γ' (tCoFix mfix idx) (tCoFix mfix' idx)
         
   | congr_all_base t t' :
-      R Σ Γ Γ' t t' ->
-      congr_all Γ Γ' t t'.
+      R le Σ Γ Γ' t t' ->
+      congr_all le Γ Γ' t t'.
 
-  Theorem congr_all_ind_all (P : context -> context -> term -> term -> Type) :
+  Theorem congr_all_ind_all
+    (P : conv_pb -> context -> context -> term -> term -> Type) :
 
-    (forall (Γ Γ' : context) (e : nat) (args args' : list term),
-      All2 (fun t t' => P Γ Γ' t t' × congr_all Γ Γ' t t') args args' ->
-    P Γ Γ' (tEvar e args) (tEvar e args')) ->
+    (forall (le : conv_pb) (Γ Γ' : context) (e : nat) (args args' : list term),
+      All2 (fun t t' => P Conv Γ Γ' t t' × congr_all Conv Γ Γ' t t') args args' ->
+    P le Γ Γ' (tEvar e args) (tEvar e args')) ->
 
-    (forall (Γ Γ' : context) (t t' u u' : term),
-      congr_all Γ Γ' t t' ->
-      P Γ Γ' t t' ->
-      congr_all Γ Γ' u u' ->
-      P Γ Γ' u u' ->
-    P Γ Γ' (tApp t u) (tApp t' u')) ->
+    (forall (le : conv_pb) (Γ Γ' : context) (t t' u u' : term),
+      congr_all le Γ Γ' t t' ->
+      P le Γ Γ' t t' ->
+      congr_all Conv Γ Γ' u u' ->
+      P Conv Γ Γ' u u' ->
+    P le Γ Γ' (tApp t u) (tApp t' u')) ->
 
-    (forall (Γ Γ' : context) (na na' : aname) (ty ty' t t' : term),
+    (forall (le : conv_pb) (Γ Γ' : context) (na na' : aname) (ty ty' t t' : term),
       Rname na na' ->
-      congr_all Γ Γ' ty ty' ->
-      P Γ Γ' ty ty' ->
-      congr_all (Γ,, vass na ty) (Γ',, vass na' ty') t t' ->
-      P (Γ,, vass na ty) (Γ',, vass na' ty') t t' ->
-    P Γ Γ' (tLambda na ty t) (tLambda na' ty' t')) ->
+      congr_all Conv Γ Γ' ty ty' ->
+      P Conv Γ Γ' ty ty' ->
+      congr_all le (Γ,, vass na ty) (Γ',, vass na' ty') t t' ->
+      P le (Γ,, vass na ty) (Γ',, vass na' ty') t t' ->
+    P le Γ Γ' (tLambda na ty t) (tLambda na' ty' t')) ->
 
-    (forall (Γ Γ' : context) (na na' : aname) (a a' b b' : term),
+    (forall (le : conv_pb) (Γ Γ' : context) (na na' : aname) (a a' b b' : term),
       Rname na na' ->
-      congr_all Γ Γ' a a' ->
-      P Γ Γ' a a' ->
-      congr_all (Γ,, vass na a) (Γ',, vass na' a') b b' ->
-      P (Γ,, vass na a) (Γ',, vass na' a') b b' ->
-    P Γ Γ' (tProd na a b) (tProd na' a' b')) ->
+      congr_all Conv Γ Γ' a a' ->
+      P Conv Γ Γ' a a' ->
+      congr_all le (Γ,, vass na a) (Γ',, vass na' a') b b' ->
+      P le (Γ,, vass na a) (Γ',, vass na' a') b b' ->
+    P le Γ Γ' (tProd na a b) (tProd na' a' b')) ->
 
-    (forall (Γ Γ' : context) (na na' : aname) (t t' ty ty' u u' : term),
+    (forall (le : conv_pb) (Γ Γ' : context) (na na' : aname) (t t' ty ty' u u' : term),
       Rname na na' ->
-      congr_all Γ Γ' t t' ->
-      P Γ Γ' t t' ->
-      congr_all Γ Γ' ty ty' ->
-      P Γ Γ' ty ty' ->
-      congr_all (Γ,, vdef na t ty) (Γ',, vdef na' t' ty') u u' ->
-      P (Γ,, vdef na t ty) (Γ',, vdef na' t' ty') u u' ->
-    P Γ Γ' (tLetIn na t ty u) (tLetIn na' t' ty' u')) ->
+      congr_all Conv Γ Γ' t t' ->
+      P Conv Γ Γ' t t' ->
+      congr_all Conv Γ Γ' ty ty' ->
+      P Conv Γ Γ' ty ty' ->
+      congr_all le (Γ,, vdef na t ty) (Γ',, vdef na' t' ty') u u' ->
+      P le (Γ,, vdef na t ty) (Γ',, vdef na' t' ty') u u' ->
+    P le Γ Γ' (tLetIn na t ty u) (tLetIn na' t' ty' u')) ->
 
-    (forall (Γ Γ' : context) (ci : case_info) (p p' : predicate term)
+    (forall (le : conv_pb) (Γ Γ' : context) (ci : case_info) (p p' : predicate term)
       (c c' : term) (brs brs' : list (branch term)),
-      Rpredicate (fun Δ Δ' t t' => P Δ Δ' t t' × congr_all Δ Δ' t t') Γ Γ' p p' ->
-      P Γ Γ' c c' ->
+      Rpredicate (fun Δ Δ' t t' => P Conv Δ Δ' t t' × congr_all Conv Δ Δ' t t') Γ Γ' p p' ->
+      P Conv Γ Γ' c c' ->
       All2
         (fun br br' : branch term =>
             let ctx := inst_case_branch_context p br in
             let ctx' := inst_case_branch_context p' br' in
             on_Trel_eq (fun t t' =>
-              P (Γ,,, ctx) (Γ',,, ctx') t t' × congr_all (Γ,,, ctx) (Γ',,, ctx') t t')
+              P Conv (Γ,,, ctx) (Γ',,, ctx') t t' × congr_all Conv (Γ,,, ctx) (Γ',,, ctx') t t')
             bbody bcontext br br')
         brs brs' ->
-    P Γ Γ' (tCase ci p c brs) (tCase ci p' c' brs')) ->
+    P le Γ Γ' (tCase ci p c brs) (tCase ci p' c' brs')) ->
     
-    (forall (Γ Γ' : context) (p : projection) (c c' : term),
-      congr_all Γ Γ' c c' ->
-      P Γ Γ' c c' ->
-    P Γ Γ' (tProj p c) (tProj p c')) ->
+    (forall (le : conv_pb) (Γ Γ' : context) (p : projection) (c c' : term),
+      congr_all Conv Γ Γ' c c' ->
+      P Conv Γ Γ' c c' ->
+    P le Γ Γ' (tProj p c) (tProj p c')) ->
 
-    (forall (Γ Γ' : context) (mfix mfix' : mfixpoint term) (idx : nat),
+    (forall (le : conv_pb) (Γ Γ' : context) (mfix mfix' : mfixpoint term) (idx : nat),
       All2
         (fun x y : def term =>
-          P Γ Γ' (dtype x) (dtype y) ×
-          congr_all Γ Γ' (dtype x) (dtype y) ×
-          congr_all (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+          P Conv Γ Γ' (dtype x) (dtype y) ×
+          congr_all Conv Γ Γ' (dtype x) (dtype y) ×
+          congr_all Conv (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
             (dbody x) (dbody y) ×
-          P (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+          P Conv (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
             (dbody x) (dbody y) ×
           rarg x = rarg y ×
           Rname (dname x) (dname y)) mfix mfix' ->
-    P Γ Γ' (tFix mfix idx) (tFix mfix' idx)) ->
+    P le Γ Γ' (tFix mfix idx) (tFix mfix' idx)) ->
 
-    (forall (Γ Γ' : context) (mfix mfix' : mfixpoint term) (idx : nat),
+    (forall (le : conv_pb) (Γ Γ' : context) (mfix mfix' : mfixpoint term) (idx : nat),
       All2
         (fun x y : def term =>
-          P Γ Γ' (dtype x) (dtype y) ×
-          congr_all Γ Γ' (dtype x) (dtype y) ×
-          congr_all (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+          P Conv Γ Γ' (dtype x) (dtype y) ×
+          congr_all Conv Γ Γ' (dtype x) (dtype y) ×
+          congr_all Conv (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
             (dbody x) (dbody y) ×
-          P (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
+          P Conv (Γ,,, fix_context mfix) (Γ',,, fix_context mfix')
             (dbody x) (dbody y) ×
           rarg x = rarg y ×
           Rname (dname x) (dname y)) mfix mfix' ->
-    P Γ Γ' (tCoFix mfix idx) (tCoFix mfix' idx)) ->
+    P le Γ Γ' (tCoFix mfix idx) (tCoFix mfix' idx)) ->
     
-    (forall (Γ Γ' : context) (t t' : term),
-      R Σ Γ Γ' t t' ->
-    P Γ Γ' t t') ->
+    (forall (le : conv_pb) (Γ Γ' : context) (t t' : term),
+      R le Σ Γ Γ' t t' ->
+    P le Γ Γ' t t') ->
 
-    forall (Γ Γ' : context) (t t' : term),
-    congr_all Γ Γ' t t' ->
-    P Γ Γ' t t'.
+    forall (le : conv_pb) (Γ Γ' : context) (t t' : term),
+    congr_all le Γ Γ' t t' ->
+    P le Γ Γ' t t'.
 Proof.
   intros.
-  revert Γ Γ' t t' X9.
-  fix aux 5.
+  revert le Γ Γ' t t' X9.
+  fix aux 6.
   move aux at top.
   move X8 at top.
   intros until t'.
@@ -1280,19 +1295,35 @@ Proof.
 
 Qed.
 
+Lemma congr_all_conv_cumul Γ Γ':
+  (forall Γ Γ', inclusion (R Conv Σ Γ Γ') (R Cumul Σ Γ Γ')) ->
+  inclusion (Rinst Conv) (Rinst Cumul) ->
+  inclusion (congr_all Conv Γ Γ') (congr_all Cumul Γ Γ').
+Proof.
+  intros inclR inclRinst t u c.
+  induction c in inclR |- *.
+
+  all : try solve [constructor ; auto].
+  
+  constructor. by apply inclR.
+Qed.
+
 End CongrAll.
 
-Instance congr_all_refl_same R Rname Rinst Σ Γ :
-  (forall Γ, Reflexive (R Σ Γ Γ)) ->
-  Reflexive (congr_all R Rname Rinst Σ Γ Γ).
+Notation congr_all_eq R Σ Γ t u :=
+    (congr_all (fun le Σ Γ Γ' => R Σ Γ) eq (fun _ => eq) Σ Conv Γ Γ t u).
+
+Instance congr_all_refl_same le R Rname Rinst Σ Γ :
+  (forall Γ, Reflexive (R le Σ Γ Γ)) ->
+  Reflexive (congr_all R Rname Rinst Σ le Γ Γ).
 Proof.
   constructor.
   reflexivity.
 Qed.
 
-Instance congr_all_refl_diff R Rname Rinst Σ Γ Γ' :
-  (forall Γ Γ', Reflexive (R Σ Γ Γ')) ->
-  Reflexive (congr_all R Rname Rinst Σ Γ Γ').
+Instance congr_all_refl_diff le R Rname Rinst Σ Γ Γ' :
+  (forall Γ Γ', Reflexive (R le Σ Γ Γ')) ->
+  Reflexive (congr_all R Rname Rinst Σ le Γ Γ').
 Proof.
   constructor.
   reflexivity.
@@ -1379,7 +1410,8 @@ Section Congr1CongrAll.
 
   Theorem congr1_congr_all Γ t u :
     (forall Γ, Reflexive (R Σ Γ)) ->
-    congr1 R Σ Γ t u -> congr_all (fun Σ Γ Γ' => R Σ Γ) eq eq Σ Γ Γ t u.
+    congr1 R Σ Γ t u ->
+    congr_all_eq R Σ Γ t u.
   Proof.
     intros rR.
     assert (forall Γ, context -> Reflexive (R Σ Γ)) by (intros ; apply rR).
@@ -1698,7 +1730,7 @@ Section Congr1CongrAll.
   Qed.
 
   Theorem congr_all_clos_refl_trans Γ t u :
-    congr_all (fun Σ' Γ' _ => (clos_refl_trans (congr1 R Σ' Γ'))) eq eq Σ Γ Γ t u ->
+    congr_all_eq (fun Σ' Γ' => clos_refl_trans (congr1 R Σ' Γ')) Σ Γ t u ->
     clos_refl_trans (congr1 R Σ Γ) t u.
   Proof.
     generalize Γ at 2.
