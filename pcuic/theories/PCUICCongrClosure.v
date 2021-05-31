@@ -1877,8 +1877,6 @@ Section Congr1CongrAll.
       
 End Congr1CongrAll.
 
-Coercion ci_ind : case_info >-> inductive.
-
 Lemma nth_error_firstn_skipn {A} {l : list A} {n t} : 
   nth_error l n = Some t -> 
   l = firstn n l ++ [t] ++ skipn (S n) l.

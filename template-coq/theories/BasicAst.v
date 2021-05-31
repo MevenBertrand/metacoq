@@ -225,6 +225,8 @@ Record case_info := mk_case_info {
   ci_relevance : relevance }.
 Derive NoConfusion EqDec for case_info.
 
+Coercion ci_ind : case_info >-> inductive.
+
 Definition string_of_case_info ci := 
   "(" ^ string_of_inductive ci.(ci_ind) ^ "," ^
   string_of_nat ci.(ci_npar) ^ "," ^
