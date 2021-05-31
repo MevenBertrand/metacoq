@@ -2,7 +2,7 @@
 From Coq Require Import RelationClasses.
 From MetaCoq.Template Require Import config utils.
 From MetaCoq.PCUIC Require Import PCUICAst PCUICInduction PCUICReflect PCUICCases.
-From MetaCoq.PCUIC Require Import PCUICEquality.
+(* From MetaCoq.PCUIC Require Import PCUICEquality. *)
 
 Require Import Equations.Prop.DepElim.
 From Equations Require Import Equations.
@@ -162,7 +162,7 @@ Definition dlet_ty na b B t (p : pos B) : pos (tLetIn na b B t) :=
 Definition dlet_in na b B t (p : pos t) : pos (tLetIn na b B t) :=
   exist (let_in :: proj1_sig p) (proj2_sig p).
 
-Lemma eq_context_upto_context_choice_term Σ Re Rle Γ Γ' c :
+(* Lemma eq_context_upto_context_choice_term Σ Re Rle Γ Γ' c :
   eq_context_upto Σ Re Rle Γ Γ' ->
   rel_option (eq_term_upto_univ Σ Re (match c.2 with
                                       | choose_decl_body => Re
@@ -255,7 +255,7 @@ Lemma eq_term_valid_pos :
 Proof.
   intros cf Σ G u v p vp e.
   eapply eq_term_upto_valid_pos. all: eauto.
-Qed.
+Qed. *)
 
 Inductive positionR : position -> position -> Prop :=
 | positionR_app_lr p q : positionR (app_r :: p) (app_l :: q)
